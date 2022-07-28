@@ -16,6 +16,7 @@
 
 package nextflow.quilt
 
+import java.nio.file.Files
 import java.nio.file.Path
 
 import groovy.transform.CompileStatic
@@ -34,21 +35,57 @@ class QuiltObserver implements TraceObserver {
 
     private Session session
 
+    private Map config
+
     private List<Path> paths
 
     @Override
     void onFlowCreate(Session session) {
         this.session = session
+        this.config = session.config.navigate('quilt') as Map
         this.paths = new ArrayList<>()
     }
 
     @Override
     void onFlowComplete() {
-        log.info 'The following files were published:'
+        // make sure quilt is configured
+        if( !config?.packageName ) {
+            return
+        }
+
+        // save the list of paths to a temp file
+        def pathsFile = Files.createTempFile('nxf-','.dot')
 
         this.paths.each { path ->
-            log.info "  ${path}"
+            pathsFile << "${path.toUriString()}\n"
         }
+
+        // build the quilt command
+        def quiltCmd = "quilt-api push ${pathsFile} ${config.packageName}"
+
+        if( config.registry )
+            quiltCmd += " --registry ${config.registry}"
+
+        if( config.force )
+            quiltCmd += " --force"
+
+        // run the quilt command
+        final cmd = "command -v quilt-api &>/dev/null || exit 128 && ${quiltCmd}"
+        final process = new ProcessBuilder().command('bash','-c', cmd).redirectErrorStream(true).start()
+        final exitStatus = process.waitFor()
+        if( exitStatus == 128 ) {
+            log.warn 'The `quilt-api` command is required to publish Quilt packages -- See https://github.com/seqeralabs/quilt-api for more info.'
+        }
+        else if( exitStatus > 0 ) {
+            log.debug "quilt-api error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
+            log.warn "Failed to publish Quilt package"
+        }
+        else {
+            log.trace "quilt-api trace -- command `$cmd`\n${process.text?.indent()}"
+        }
+
+        // cleanup
+        Files.deleteIfExists(pathsFile)
     }
 
     @Override
