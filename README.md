@@ -21,10 +21,12 @@ plugins {
 
 The plugin also adds a new `quilt` config scope which supports the following options:
 
-| Config option 	  | Description 	            |
-|---	              |---	                        |
+| Config option 	    | Description 	            |
+|---	                |---	                      |
 | `quilt.packageName` | Name of package, in the USER/PKG format
 | `quilt.registry`    | Registry where to create the new package
+| `quilt.message`     | The commit message for the new package
+| `quilt.meta`        | Package-level metadata in the form of key-value pairs
 | `quilt.force`       | Skip the parent top hash check and create a new revision even if your local state is behind the remote registry.
 
 For example:
@@ -32,6 +34,9 @@ For example:
 quilt {
   packageName = 'genomes/ecoli'
   registry = 's3://seqera-quilt'
+  message = 'My commit message'
+  meta = [key: 'value']
+  force = false
 }
 ```
 

@@ -19,6 +19,7 @@ package nextflow.quilt
 import java.nio.file.Files
 import java.nio.file.Path
 
+import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
@@ -65,6 +66,16 @@ class QuiltObserver implements TraceObserver {
 
         if( config.registry )
             quiltCmd += " --registry ${config.registry}"
+
+        if( config.message )
+            quiltCmd += " --message \'${config.message}\'"
+
+        if( config.meta ) {
+            if( config.meta instanceof Map )
+                quiltCmd += " --meta \'${JsonOutput.toJson(config.meta)}\'"
+            else
+                throw new IllegalStateException("Not a valid quilt meta object: ${config.meta}")
+        }
 
         if( config.force )
             quiltCmd += " --force"
