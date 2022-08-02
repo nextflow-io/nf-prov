@@ -1,8 +1,8 @@
 # nf-quilt
 
-This plugin provides an integration for Nextflow with [Quilt](https://quiltdata.com/).
+Nextflow plugin for interacting with [Quilt](https://quiltdata.com/) packages.
 
-It currently allows you to publish a Quilt package for a workflow run that contains all of the output files that were published to S3.
+`nf-quilt` currently allows you to publish the outputs of a workflow run as a Quilt package. WHen you launch a pipeline with the `nf-quilt` plugin, it will collect every output file that is published to S3 and publish a Quilt package upon workflow completion.
 
 ## Requirements
 
@@ -19,7 +19,9 @@ plugins {
 }
 ```
 
-The plugin also adds a new `quilt` config scope which supports the following options:
+## Configuration
+
+The plugin adds a new `quilt` config scope which supports the following options:
 
 | Config option 	    | Description 	            |
 |---	                |---	                      |
@@ -40,4 +42,6 @@ quilt {
 }
 ```
 
-WHen you launch a pipeline with the `nf-quilt` plugin, it will collect every output file that is published to S3 and publish a Quilt package upon workflow completion.
+## Development
+
+Refer to the [nf-hello](https://github.com/nextflow-io/nf-hello) README for instructions on how to build, test, and publish Nextflow plugins.
