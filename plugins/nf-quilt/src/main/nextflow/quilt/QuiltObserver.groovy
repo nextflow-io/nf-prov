@@ -16,8 +16,10 @@
 
 package nextflow.quilt
 
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.PathMatcher
 
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
@@ -38,19 +40,42 @@ class QuiltObserver implements TraceObserver {
 
     private Map config
 
+    private List<PathMatcher> matchers
+
     private List<Path> paths
 
     @Override
     void onFlowCreate(Session session) {
         this.session = session
         this.config = session.config.navigate('quilt') as Map
+        this.config.paths = this.config.paths ?: []
+
+        this.matchers = this.config.paths.collect { pattern ->
+            FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
+        }
+
         this.paths = new ArrayList<>()
+    }
+
+    @Override
+    void onFilePublish(Path destination) {
+        boolean match = this.matchers.isEmpty() || this.matchers.any { matcher ->
+            matcher.matches(destination)
+        }
+
+        if ( match )
+            this.paths << destination
     }
 
     @Override
     void onFlowComplete() {
         // make sure quilt is configured
         if( !config?.packageName ) {
+            return
+        }
+
+        // make sure there are files to publish
+        if( this.paths.isEmpty() ) {
             return
         }
 
@@ -97,10 +122,5 @@ class QuiltObserver implements TraceObserver {
 
         // cleanup
         Files.deleteIfExists(pathsFile)
-    }
-
-    @Override
-    void onFilePublish(Path destination) {
-        this.paths << destination
     }
 }
