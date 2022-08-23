@@ -87,7 +87,7 @@ class QuiltObserver implements TraceObserver {
         }
 
         // build the quilt command
-        def quiltCmd = "quilt-api push ${pathsFile} ${config.packageName}"
+        def quiltCmd = "quilt-cli push ${pathsFile} ${config.packageName}"
 
         if( config.registry )
             quiltCmd += " --registry ${config.registry}"
@@ -106,18 +106,18 @@ class QuiltObserver implements TraceObserver {
             quiltCmd += " --force"
 
         // run the quilt command
-        final cmd = "command -v quilt-api &>/dev/null || exit 128 && ${quiltCmd}"
+        final cmd = "command -v quilt-cli &>/dev/null || exit 128 && ${quiltCmd}"
         final process = new ProcessBuilder().command('bash','-c', cmd).redirectErrorStream(true).start()
         final exitStatus = process.waitFor()
         if( exitStatus == 128 ) {
-            log.warn 'The `quilt-api` command is required to publish Quilt packages -- See https://github.com/seqeralabs/quilt-api for more info.'
+            log.warn 'The `quilt-cli` command is required to publish Quilt packages -- See https://github.com/nextflow-io/nf-quilt for more info.'
         }
         else if( exitStatus > 0 ) {
-            log.debug "quilt-api error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
+            log.debug "quilt-cli error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
             log.warn "Failed to publish Quilt package"
         }
         else {
-            log.trace "quilt-api trace -- command `$cmd`\n${process.text?.indent()}"
+            log.trace "quilt-cli trace -- command `$cmd`\n${process.text?.indent()}"
         }
 
         // cleanup

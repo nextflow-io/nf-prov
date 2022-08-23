@@ -8,9 +8,9 @@ Nextflow plugin for interacting with [Quilt](https://quiltdata.com/) packages.
 
 To use the `nf-quilt` plugin, you need Nextflow 22.04 (or later) and Python 3.7 (or later).
 
-Install the [quilt-api](https://github.com/seqeralabs/quilt-api) package:
+Install the [quilt-cli](./quilt-cli) Python package:
 ```bash
-pip3 install git+ssh://git@github.com/seqeralabs/quilt-api.git
+pip3 install git+https://github.com/nextflow-io/nf-quilt.git#subdirectory=quilt-cli
 ```
 
 Add the following snippet to your `nextflow.config` to enable the plugin:
