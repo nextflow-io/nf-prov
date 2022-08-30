@@ -22,6 +22,8 @@ plugins {
 
 Configure the plugin with the `quilt` config scope in your `nextflow.config`. At a minimum, you should specify the package name and registry. You can also specify a list of paths to include in the Quilt package; by default, the plugin will include all output files that were published to S3.
 
+_TIP: It is recommended that you use `publishDir` to select outputs for the Quilt package, rather than `quilt.paths`, so that the Quilt package matches the actual workflow outputs._
+
 Here's an example based on `nf-core/rnaseq`:
 ```groovy
 quilt {
@@ -30,15 +32,6 @@ quilt {
   message = 'My commit message'
   meta = [pipeline: 'nf-core/rnaseq']
   force = false
-
-  paths = [
-    'multiqc_report.html',
-    '**/star_salmon/**/deseq2.plots.pdf',
-    '**/star_salmon/salmon.merged.gene_counts.tsv',
-    '**/star_salmon/salmon.merged.gene_tpm.tsv',
-    '**/star_salmon/salmon.merged.transcript_counts.tsv',
-    '**/star_salmon/salmon.merged.transcript_tpm.tsv'
-  ]
 }
 ```
 
@@ -48,8 +41,8 @@ Finally, run your Nextflow pipeline with your config file. You do not need to mo
 
 The plugin exposes a new `quilt` config scope which supports the following options:
 
-| Config option 	    | Description 	            |
-|---	                |---	                      |
+| Config option 	  | Description 	          |
+|---	              |---	                      |
 | `quilt.packageName` | Name of package, in the USER/PKG format
 | `quilt.registry`    | Registry where to create the new package
 | `quilt.message`     | The commit message for the new package
