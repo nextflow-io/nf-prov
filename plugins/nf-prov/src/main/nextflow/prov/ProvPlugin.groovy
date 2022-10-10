@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import groovy.transform.CompileStatic
 import nextflow.plugin.BasePlugin
@@ -22,14 +22,14 @@ import nextflow.plugin.Scoped
 import org.pf4j.PluginWrapper
 
 /**
- * Implements the Quilt plugin entry point
+ * Implements the Prov plugin entry point
  *
  * @author Ben Sherman <bentshermann@gmail.com>
  */
 @CompileStatic
-class QuiltPlugin extends BasePlugin {
+class ProvPlugin extends BasePlugin {
 
-    QuiltPlugin(PluginWrapper wrapper) {
+    ProvPlugin(PluginWrapper wrapper) {
         super(wrapper)
     }
 }

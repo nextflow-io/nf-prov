@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -34,7 +34,7 @@ import nextflow.trace.TraceObserver
  */
 @Slf4j
 @CompileStatic
-class QuiltObserver implements TraceObserver {
+class ProvObserver implements TraceObserver {
 
     private Session session
 
@@ -47,7 +47,7 @@ class QuiltObserver implements TraceObserver {
     @Override
     void onFlowCreate(Session session) {
         this.session = session
-        this.config = session.config.navigate('quilt') as Map
+        this.config = session.config.navigate('prov') as Map
         this.config.paths = this.config.paths ?: []
 
         this.matchers = this.config.paths.collect { pattern ->
@@ -69,7 +69,7 @@ class QuiltObserver implements TraceObserver {
 
     @Override
     void onFlowComplete() {
-        // make sure quilt is configured
+        // make sure prov is configured
         if( !config?.packageName ) {
             return
         }
@@ -86,38 +86,38 @@ class QuiltObserver implements TraceObserver {
             pathsFile << "${path.toUriString()}\n"
         }
 
-        // build the quilt command
-        def quiltCmd = "quilt-cli push ${pathsFile} ${config.packageName}"
+        // build the prov command
+        def provCmd = "prov-cli push ${pathsFile} ${config.packageName}"
 
         if( config.registry )
-            quiltCmd += " --registry ${config.registry}"
+            provCmd += " --registry ${config.registry}"
 
         if( config.message )
-            quiltCmd += " --message \'${config.message}\'"
+            provCmd += " --message \'${config.message}\'"
 
         if( config.meta ) {
             if( config.meta instanceof Map )
-                quiltCmd += " --meta \'${JsonOutput.toJson(config.meta)}\'"
+                provCmd += " --meta \'${JsonOutput.toJson(config.meta)}\'"
             else
-                throw new IllegalStateException("Not a valid quilt meta object: ${config.meta}")
+                throw new IllegalStateException("Not a valid prov meta object: ${config.meta}")
         }
 
         if( config.force )
-            quiltCmd += " --force"
+            provCmd += " --force"
 
-        // run the quilt command
-        final cmd = "command -v quilt-cli &>/dev/null || exit 128 && ${quiltCmd}"
+        // run the prov command
+        final cmd = "command -v prov-cli &>/dev/null || exit 128 && ${provCmd}"
         final process = new ProcessBuilder().command('bash','-c', cmd).redirectErrorStream(true).start()
         final exitStatus = process.waitFor()
         if( exitStatus == 128 ) {
-            log.warn 'The `quilt-cli` command is required to publish Quilt packages -- See https://github.com/nextflow-io/nf-prov for more info.'
+            log.warn 'The `prov-cli` command is required to publish Prov packages -- See https://github.com/nextflow-io/nf-prov for more info.'
         }
         else if( exitStatus > 0 ) {
-            log.debug "quilt-cli error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
-            log.warn "Failed to publish Quilt package"
+            log.debug "prov-cli error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
+            log.warn "Failed to publish Prov package"
         }
         else {
-            log.trace "quilt-cli trace -- command `$cmd`\n${process.text?.indent()}"
+            log.trace "prov-cli trace -- command `$cmd`\n${process.text?.indent()}"
         }
 
         // cleanup

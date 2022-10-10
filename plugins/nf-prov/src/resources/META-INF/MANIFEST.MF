@@ -1,6 +1,6 @@
 Manifest-Version: 1.0
 Plugin-Id: nf-prov
 Plugin-Version: 0.1.0
-Plugin-Class: nextflow.quilt.QuiltPlugin
+Plugin-Class: nextflow.prov.ProvPlugin
 Plugin-Provider: nextflow
 Plugin-Requires: >=22.04.0

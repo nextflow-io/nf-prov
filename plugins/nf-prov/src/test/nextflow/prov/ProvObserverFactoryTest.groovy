@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import nextflow.Session
 import spock.lang.Specification
@@ -23,14 +23,14 @@ import spock.lang.Specification
  *
  * @author Ben Sherman <bentshermann@gmail.com>
  */
-class QuiltObserverFactoryTest extends Specification {
+class ProvObserverFactoryTest extends Specification {
 
     def 'should return observer' () {
         when:
-        def result = new QuiltObserverFactory().create(Mock(Session))
+        def result = new ProvObserverFactory().create(Mock(Session))
         then:
         result.size()==1
-        result[0] instanceof QuiltObserver
+        result[0] instanceof ProvObserver
     }
 
 }
