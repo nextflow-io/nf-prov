@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import groovy.transform.CompileStatic
 import nextflow.Session
@@ -27,12 +27,12 @@ import nextflow.trace.TraceObserverFactory
  * @author Ben Sherman <bentshermann@gmail.com>
  */
 @CompileStatic
-class QuiltObserverFactory implements TraceObserverFactory {
+class ProvObserverFactory implements TraceObserverFactory {
 
     @Override
     Collection<TraceObserver> create(Session session) {
         final result = new ArrayList()
-        result.add( new QuiltObserver() )
+        result.add( new ProvObserver() )
         return result
     }
 }

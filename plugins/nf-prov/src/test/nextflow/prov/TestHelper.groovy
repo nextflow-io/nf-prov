@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import com.google.common.jimfs.Configuration
 import com.google.common.jimfs.Jimfs

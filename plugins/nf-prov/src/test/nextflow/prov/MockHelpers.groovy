@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.quilt
+package nextflow.prov
 
 import java.nio.file.Paths
 
