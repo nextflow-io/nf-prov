@@ -110,7 +110,7 @@ class QuiltObserver implements TraceObserver {
         final process = new ProcessBuilder().command('bash','-c', cmd).redirectErrorStream(true).start()
         final exitStatus = process.waitFor()
         if( exitStatus == 128 ) {
-            log.warn 'The `quilt-cli` command is required to publish Quilt packages -- See https://github.com/nextflow-io/nf-quilt for more info.'
+            log.warn 'The `quilt-cli` command is required to publish Quilt packages -- See https://github.com/nextflow-io/nf-prov for more info.'
         }
         else if( exitStatus > 0 ) {
             log.debug "quilt-cli error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
