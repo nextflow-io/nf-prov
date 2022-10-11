@@ -45,6 +45,8 @@ class ProvObserver implements TraceObserver {
 
     private Map config
 
+    private boolean enabled
+
     private Path path
 
     private List<PathMatcher> matchers
@@ -55,6 +57,7 @@ class ProvObserver implements TraceObserver {
     void onFlowCreate(Session session) {
         this.session = session
         this.config = session.config
+        this.enabled = this.config.navigate('prov.enabled', true)
         this.config.overwrite = this.config.navigate('prov.overwrite', false)
         this.config.patterns = this.config.navigate('prov.patterns', [])
         this.config.file = this.config.navigate('prov.file', DEF_FILE_NAME)
@@ -62,7 +65,7 @@ class ProvObserver implements TraceObserver {
 
         // check file existance
         final attrs = FileHelper.readAttributes(this.path)
-        if( attrs ) {
+        if( this.enabled && attrs ) {
             if( this.config.overwrite && (attrs.isDirectory() || !this.path.delete()) )
                 throw new AbortOperationException("Unable to overwrite existing file manifest: ${this.path.toUriString()}")
             else if( !this.config.overwrite )
@@ -94,7 +97,7 @@ class ProvObserver implements TraceObserver {
     @Override
     void onFlowComplete() {
         // make sure there are files to publish
-        if ( this.publishedPaths.isEmpty() ) {
+        if ( !this.enabled || this.publishedPaths.isEmpty() ) {
             return
         }
 
