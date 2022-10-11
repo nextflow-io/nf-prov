@@ -27,7 +27,9 @@ import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.trace.TraceObserver
 import nextflow.trace.TraceHelper
+import nextflow.trace.TraceRecord
 import nextflow.file.FileHelper
+import nextflow.processor.TaskHandler
 import nextflow.exception.AbortOperationException
 
 /**
@@ -51,7 +53,9 @@ class ProvObserver implements TraceObserver {
 
     private List<PathMatcher> matchers
 
-    private List<Map> publishedPaths
+    private List<Map> published
+
+    private List<Map> tasks
 
     @Override
     void onFlowCreate(Session session) {
@@ -76,7 +80,20 @@ class ProvObserver implements TraceObserver {
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
         }
 
-        this.publishedPaths = new ArrayList<>()
+        this.published = []
+        this.tasks = []
+    }
+
+    @Override
+    void onProcessComplete(TaskHandler handler, TraceRecord trace){
+        def taskRun = handler.getTask()
+        def taskConfig = taskRun.config
+
+        def taskMap = [
+            'id': taskRun.id
+        ]
+
+        this.tasks.add(taskMap)
     }
 
     @Override
@@ -91,30 +108,31 @@ class ProvObserver implements TraceObserver {
         ]
 
         if ( match ) {
-            this.publishedPaths.add(pathMap)
+            this.published.add(pathMap)
         }
     }
 
     @Override
     void onFlowComplete() {
         // make sure there are files to publish
-        if ( !this.enabled || this.publishedPaths.isEmpty() ) {
+        if ( !this.enabled || this.published.isEmpty() ) {
             return
         }
 
         // generate manifest map
-        def manifest = [ "published": [] ]
-        this.publishedPaths.each { path ->
-            manifest.published.add(path)
-        }
+        def manifest = [
+            'config': this.config,
+            'published': this.published,
+            'tasks': this.tasks
+        ]
 
         // output manifest map as JSON
         def manifest_json = JsonOutput.toJson(manifest)
         def manifest_json_pretty = JsonOutput.prettyPrint(manifest_json)
 
         // create JSON file manifest
-        Path publishedPathsFile = Files.createFile(this.path)
-        publishedPathsFile << "${manifest_json_pretty}\n"
+        Path manifestFile = Files.createFile(this.path)
+        manifestFile << "${manifest_json_pretty}\n"
 
     }
 
