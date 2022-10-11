@@ -80,13 +80,14 @@ class ProvObserver implements TraceObserver {
     }
 
     @Override
-    void onFilePublish(Path destination) {
+    void onFilePublish(Path source, Path destination) {
         boolean match = this.matchers.isEmpty() || this.matchers.any { matcher ->
             matcher.matches(destination)
         }
 
         def pathMap = [
-            'uri': destination.toUriString()
+            'source': source.toUriString(),
+            'target': destination.toUriString()
         ]
 
         if ( match ) {
@@ -102,9 +103,9 @@ class ProvObserver implements TraceObserver {
         }
 
         // generate manifest map
-        def manifest = [ "outputs": [] ]
+        def manifest = [ "published": [] ]
         this.publishedPaths.each { path ->
-            manifest.outputs.add(path)
+            manifest.published.add(path)
         }
 
         // output manifest map as JSON
