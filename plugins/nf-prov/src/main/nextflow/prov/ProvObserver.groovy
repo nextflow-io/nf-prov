@@ -26,6 +26,9 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.trace.TraceObserver
+import nextflow.trace.TraceHelper
+import nextflow.file.FileHelper
+import nextflow.exception.AbortOperationException
 
 /**
  * Plugin observer of workflow events
@@ -36,7 +39,7 @@ import nextflow.trace.TraceObserver
 @CompileStatic
 class ProvObserver implements TraceObserver {
 
-    public static final String DEF_FILE_NAME = 'manifest.txt'
+    public static final String DEF_FILE_NAME = 'manifest.json'
 
     private Session session
 
@@ -46,15 +49,25 @@ class ProvObserver implements TraceObserver {
 
     private List<PathMatcher> matchers
 
-    private List<Path> publishedPaths
+    private List<Map> publishedPaths
 
     @Override
     void onFlowCreate(Session session) {
         this.session = session
         this.config = session.config
+        this.config.overwrite = this.config.navigate('prov.overwrite', false)
         this.config.patterns = this.config.navigate('prov.patterns', [])
         this.config.file = this.config.navigate('prov.file', DEF_FILE_NAME)
         this.path = (this.config.file as Path).complete()
+
+        // check file existance
+        final attrs = FileHelper.readAttributes(this.path)
+        if( attrs ) {
+            if( this.config.overwrite && (attrs.isDirectory() || !this.path.delete()) )
+                throw new AbortOperationException("Unable to overwrite existing file manifest: ${this.path.toUriString()}")
+            else if( !this.config.overwrite )
+                throw new AbortOperationException("File manifest already exists: ${this.path.toUriString()}")
+        }
 
         this.matchers = this.config.patterns.collect { pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
@@ -69,24 +82,36 @@ class ProvObserver implements TraceObserver {
             matcher.matches(destination)
         }
 
-        if ( match )
-            this.publishedPaths << destination
+        def pathMap = [
+            'uri': destination.toUriString()
+        ]
+
+        if ( match ) {
+            this.publishedPaths.add(pathMap)
+        }
     }
 
     @Override
     void onFlowComplete() {
         // make sure there are files to publish
-        if( this.publishedPaths.isEmpty() ) {
+        if ( this.publishedPaths.isEmpty() ) {
             return
         }
 
-        // save the list of paths to a temp file
-        // TODO: Format list of published files as JSON
-        Path publishedPathsFile = Files.createFile(this.path)
-
+        // generate manifest map
+        def manifest = [ "outputs": [] ]
         this.publishedPaths.each { path ->
-            publishedPathsFile << "${path.toUriString()}\n"
+            manifest.outputs.add(path)
         }
+
+        // output manifest map as JSON
+        def manifest_json = JsonOutput.toJson(manifest)
+        def manifest_json_pretty = JsonOutput.prettyPrint(manifest_json)
+
+        // create JSON file manifest
+        Path publishedPathsFile = Files.createFile(this.path)
+        publishedPathsFile << "${manifest_json_pretty}\n"
+
     }
 
 }
