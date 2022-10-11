@@ -42,27 +42,25 @@ class ProvObserver implements TraceObserver {
 
     private Map config
 
-    private Path manifestPath
+    private Path path
 
     private List<PathMatcher> matchers
 
-    private List<Path> paths
+    private List<Path> publishedPaths
 
     @Override
     void onFlowCreate(Session session) {
         this.session = session
-        this.config = session.config.navigate('prov') as Map
-        this.config.paths = this.config.paths ?: []
-        this.config.file = this.config.file ?: this.DEF_FILE_NAME
-        this.manifestPath = (this.config.file as Path).complete()
+        this.config = session.config
+        this.config.patterns = this.config.navigate('prov.patterns', [])
+        this.config.file = this.config.navigate('prov.file', DEF_FILE_NAME)
+        this.path = (this.config.file as Path).complete()
 
-        log.warn('Plugin initialized')
-
-        this.matchers = this.config.paths.collect { pattern ->
+        this.matchers = this.config.patterns.collect { pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
         }
 
-        this.paths = new ArrayList<>()
+        this.publishedPaths = new ArrayList<>()
     }
 
     @Override
@@ -71,31 +69,24 @@ class ProvObserver implements TraceObserver {
             matcher.matches(destination)
         }
 
-        log.warn("match: ${match}")
-        log.warn("destination: ${destination}")
-
         if ( match )
-            this.paths << destination
+            this.publishedPaths << destination
     }
 
     @Override
     void onFlowComplete() {
-        // make sure prov is configured
-        // if( !config?.packageName ) {
-        //     return
-        // }
-
         // make sure there are files to publish
-        if( this.paths.isEmpty() ) {
+        if( this.publishedPaths.isEmpty() ) {
             return
         }
 
         // save the list of paths to a temp file
         // TODO: Format list of published files as JSON
-        Path pathsFile = Files.createFile(this.manifestPath)
+        Path publishedPathsFile = Files.createFile(this.path)
 
-        this.paths.each { path ->
-            pathsFile << "${path.toUriString()}\n"
+        this.publishedPaths.each { path ->
+            publishedPathsFile << "${path.toUriString()}\n"
         }
     }
+
 }
