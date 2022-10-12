@@ -90,7 +90,9 @@ class ProvObserver implements TraceObserver {
         def taskConfig = taskRun.config
 
         def taskMap = [
-            'id': taskRun.id
+            'id': taskRun.id as int,
+            'inputs': taskRun.inputs.collect {it.value as String}.flatten(),
+            'outputs': taskRun.outputs.collect {it.value as String}.flatten()
         ]
 
         this.tasks.add(taskMap)
@@ -117,6 +119,19 @@ class ProvObserver implements TraceObserver {
         // make sure there are files to publish
         if ( !this.enabled || this.published.isEmpty() ) {
             return
+        }
+
+        // generate temporary output-task map
+        def outputTaskMap = [:]
+        this.tasks.each { task ->
+            task.outputs.each { output ->
+                outputTaskMap.put(output, task)
+            }
+        }
+
+        // add task information to published files
+        this.published.each { path ->
+            path['publishingTask'] = outputTaskMap[path.source]
         }
 
         // generate manifest map
