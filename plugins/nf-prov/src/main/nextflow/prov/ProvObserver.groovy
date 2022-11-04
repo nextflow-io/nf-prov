@@ -30,31 +30,37 @@ import nextflow.trace.TraceObserver
 /**
  * Plugin observer of workflow events
  *
- * @author Ben Sherman <bentshermann@gmail.com>
+ * @author Bruno Grande <bruno.grande@sagebase.org>
  */
 @Slf4j
 @CompileStatic
 class ProvObserver implements TraceObserver {
 
+    public static final String DEF_FILE_NAME = 'manifest.txt'
+
     private Session session
 
     private Map config
 
+    private Path path
+
     private List<PathMatcher> matchers
 
-    private List<Path> paths
+    private List<Path> publishedPaths
 
     @Override
     void onFlowCreate(Session session) {
         this.session = session
-        this.config = session.config.navigate('prov') as Map
-        this.config.paths = this.config.paths ?: []
+        this.config = session.config
+        this.config.patterns = this.config.navigate('prov.patterns', [])
+        this.config.file = this.config.navigate('prov.file', DEF_FILE_NAME)
+        this.path = (this.config.file as Path).complete()
 
-        this.matchers = this.config.paths.collect { pattern ->
+        this.matchers = this.config.patterns.collect { pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
         }
 
-        this.paths = new ArrayList<>()
+        this.publishedPaths = new ArrayList<>()
     }
 
     @Override
@@ -64,63 +70,23 @@ class ProvObserver implements TraceObserver {
         }
 
         if ( match )
-            this.paths << destination
+            this.publishedPaths << destination
     }
 
     @Override
     void onFlowComplete() {
-        // make sure prov is configured
-        if( !config?.packageName ) {
-            return
-        }
-
         // make sure there are files to publish
-        if( this.paths.isEmpty() ) {
+        if( this.publishedPaths.isEmpty() ) {
             return
         }
 
         // save the list of paths to a temp file
-        def pathsFile = Files.createTempFile('nxf-','.dot')
+        // TODO: Format list of published files as JSON
+        Path publishedPathsFile = Files.createFile(this.path)
 
-        this.paths.each { path ->
-            pathsFile << "${path.toUriString()}\n"
+        this.publishedPaths.each { path ->
+            publishedPathsFile << "${path.toUriString()}\n"
         }
-
-        // build the prov command
-        def provCmd = "prov-cli push ${pathsFile} ${config.packageName}"
-
-        if( config.registry )
-            provCmd += " --registry ${config.registry}"
-
-        if( config.message )
-            provCmd += " --message \'${config.message}\'"
-
-        if( config.meta ) {
-            if( config.meta instanceof Map )
-                provCmd += " --meta \'${JsonOutput.toJson(config.meta)}\'"
-            else
-                throw new IllegalStateException("Not a valid prov meta object: ${config.meta}")
-        }
-
-        if( config.force )
-            provCmd += " --force"
-
-        // run the prov command
-        final cmd = "command -v prov-cli &>/dev/null || exit 128 && ${provCmd}"
-        final process = new ProcessBuilder().command('bash','-c', cmd).redirectErrorStream(true).start()
-        final exitStatus = process.waitFor()
-        if( exitStatus == 128 ) {
-            log.warn 'The `prov-cli` command is required to publish Prov packages -- See https://github.com/nextflow-io/nf-prov for more info.'
-        }
-        else if( exitStatus > 0 ) {
-            log.debug "prov-cli error -- command `$cmd` -- exit status: $exitStatus\n${process.text?.indent()}"
-            log.warn "Failed to publish Prov package"
-        }
-        else {
-            log.trace "prov-cli trace -- command `$cmd`\n${process.text?.indent()}"
-        }
-
-        // cleanup
-        Files.deleteIfExists(pathsFile)
     }
+
 }
