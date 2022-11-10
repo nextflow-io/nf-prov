@@ -26,7 +26,6 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.trace.TraceObserver
-import nextflow.trace.TraceHelper
 import nextflow.file.FileHelper
 import nextflow.exception.AbortOperationException
 
