@@ -80,7 +80,7 @@ class ProvObserver implements TraceObserver {
     }
 
     @Override
-    void onFilePublish(Path source, Path destination) {
+    void onFilePublish(Path destination, Path source) {
         boolean match = this.matchers.isEmpty() || this.matchers.any { matcher ->
             matcher.matches(destination)
         }
