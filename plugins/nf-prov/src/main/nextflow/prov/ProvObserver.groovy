@@ -90,8 +90,8 @@ class ProvObserver implements TraceObserver {
 
         def taskMap = [
             'id': taskRun.id as int,
-            'inputs': taskRun.inputs.size(),
-            'outputs': taskRun.outputs.size()
+            'inputs': taskRun.inputs.collect {it.value as String}.flatten(),
+            'outputs': taskRun.outputs.collect {it.value as String}.flatten()
         ]
 
         this.tasks.add(taskMap)
