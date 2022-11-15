@@ -33,7 +33,6 @@ cd ../nextflow-nf-prov && ./gradlew compile exportClasspath && cd -
 grep -v 'includeBuild' settings.gradle > settings.gradle.bkp
 echo "includeBuild('../nextflow-nf-prov')" >> settings.gradle.bkp
 mv -f settings.gradle.bkp settings.gradle
-./gradlew compileGroovy
 ./gradlew assemble
 
 # Launch

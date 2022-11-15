@@ -26,7 +26,6 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.trace.TraceObserver
-import nextflow.trace.TraceHelper
 import nextflow.trace.TraceRecord
 import nextflow.file.FileHelper
 import nextflow.processor.TaskHandler
@@ -99,7 +98,7 @@ class ProvObserver implements TraceObserver {
     }
 
     @Override
-    void onFilePublish(Path source, Path destination) {
+    void onFilePublish(Path destination, Path source) {
         boolean match = this.matchers.isEmpty() || this.matchers.any { matcher ->
             matcher.matches(destination)
         }
