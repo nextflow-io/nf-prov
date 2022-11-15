@@ -90,8 +90,8 @@ class ProvObserver implements TraceObserver {
 
         def taskMap = [
             'id': taskRun.id as int,
-            'inputs': taskRun.inputs.collect {it.value as String}.flatten(),
-            'outputs': taskRun.outputs.collect {it.value as String}.flatten()
+            'inputs': taskRun.inputs.size(),
+            'outputs': taskRun.outputs.size()
         ]
 
         this.tasks.add(taskMap)
@@ -135,7 +135,7 @@ class ProvObserver implements TraceObserver {
 
         // generate manifest map
         def manifest = [
-            'config': this.config,
+            'pipeline': this.config.manifest,
             'published': this.published,
             'tasks': this.tasks
         ]
