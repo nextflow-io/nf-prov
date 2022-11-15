@@ -35,6 +35,12 @@ jobs:
           java-version: ${{matrix.java_version}}
           architecture: x64
 
+      - name: Setup Nextflow
+        run: |
+          git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow
+          cd ../nextflow && ./gradlew compile exportClasspath && cd -
+          echo "includeBuild('../nextflow')" >> settings.gradle
+      
       - name: Compile
         run: ./gradlew assemble
 

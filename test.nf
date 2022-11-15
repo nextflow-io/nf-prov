@@ -2,7 +2,7 @@ nextflow.enable.dsl=2
 
 process RNG {
 
-    publishDir "outputs/", mode: 'copy'
+    publishDir "out/", mode: 'copy'
 
     input:
     val prefix
