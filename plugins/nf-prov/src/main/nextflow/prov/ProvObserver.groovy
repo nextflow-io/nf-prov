@@ -28,6 +28,7 @@ import nextflow.Session
 import nextflow.trace.TraceObserver
 import nextflow.trace.TraceRecord
 import nextflow.file.FileHelper
+import nextflow.file.FileHolder
 import nextflow.processor.TaskHandler
 import nextflow.exception.AbortOperationException
 
@@ -83,6 +84,32 @@ class ProvObserver implements TraceObserver {
         this.tasks = []
     }
 
+    static def unwrap(ArrayList root) {
+        root.eachWithIndex { item, index ->
+            root[index] = unwrap(item)
+        }
+        return root
+    }
+
+    static def unwrap(LinkedHashMap root) {
+        root.eachWithIndex { key, value, index ->
+            root[key] = unwrap(value)
+        }
+        return root
+    }
+
+    static def unwrap(FileHolder root) {
+        return root.getStorePath()
+    }
+
+    static def unwrap(String root) {
+        return root
+    }
+
+    static def unwrap(def root) {
+        return root as String
+    }
+
     @Override
     void onProcessComplete(TaskHandler handler, TraceRecord trace){
         def taskRun = handler.getTask()
@@ -90,8 +117,8 @@ class ProvObserver implements TraceObserver {
 
         def taskMap = [
             'id': taskRun.id as int,
-            'inputs': taskRun.inputs.collect {it.value as String}.flatten(),
-            'outputs': taskRun.outputs.collect {it.value as String}.flatten()
+            'inputs': taskRun.inputs.collect { unwrap(it.value) },
+            'outputs': taskRun.outputs.collect { unwrap(it.value) }
         ]
 
         this.tasks.add(taskMap)
