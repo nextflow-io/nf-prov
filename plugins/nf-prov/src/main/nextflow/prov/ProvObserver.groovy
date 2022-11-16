@@ -97,6 +97,8 @@ class ProvObserver implements TraceObserver {
         } else if ( root instanceof FileHolder ) {
             root = root.getStorePath()
             root = unwrap(root)
+        } else if ( root instanceof Path ) {
+            root = root.toUriString()
         } else if ( root instanceof Boolean ||
                     root instanceof Number ) {
             return root
@@ -115,8 +117,8 @@ class ProvObserver implements TraceObserver {
             'name': taskRun.getName(),
             'cached': taskRun.cached,
             'process': trace.getProcessName(),
-            'inputs': taskRun.inputs.collect { unwrap(it.value) },
-            'outputs': taskRun.outputs.collect { unwrap(it.value) }
+            'inputs': taskRun.inputs.collect { inParam, object -> [ "${inParam.getName()}": unwrap(object) ] },
+            'outputs': taskRun.outputs.collect { outParam, object -> [ "${outParam.getName()}": unwrap(object) ] }
         ]
 
         this.tasks.add(taskMap)
