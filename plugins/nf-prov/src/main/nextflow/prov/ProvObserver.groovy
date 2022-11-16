@@ -84,44 +84,52 @@ class ProvObserver implements TraceObserver {
         this.tasks = []
     }
 
-    static def unwrap(ArrayList root) {
-        root.eachWithIndex { item, index ->
-            root[index] = unwrap(item)
+    static def unwrap(root) {
+        if ( root instanceof LinkedHashMap ) {
+            root.eachWithIndex { key, value, index ->
+                root[key] = unwrap(value)
+            }
+        } else if ( root instanceof Collection ) {
+            root = new ArrayList(root);
+            root.eachWithIndex { item, index ->
+                root[index] = unwrap(item)
+            }
+        } else if ( root instanceof FileHolder ) {
+            root = root.getStorePath()
+            root = unwrap(root)
+        } else if ( root instanceof Boolean ||
+                    root instanceof Number ) {
+            return root
+        } else {
+            return root as String
         }
         return root
     }
 
-    static def unwrap(LinkedHashMap root) {
-        root.eachWithIndex { key, value, index ->
-            root[key] = unwrap(value)
-        }
-        return root
-    }
-
-    static def unwrap(FileHolder root) {
-        return root.getStorePath()
-    }
-
-    static def unwrap(String root) {
-        return root
-    }
-
-    static def unwrap(def root) {
-        return root as String
-    }
-
-    @Override
-    void onProcessComplete(TaskHandler handler, TraceRecord trace){
+    void trackProcess(TaskHandler handler, TraceRecord trace){
         def taskRun = handler.getTask()
         def taskConfig = taskRun.config
 
         def taskMap = [
             'id': taskRun.id as int,
+            'name': taskRun.getName(),
+            'cached': taskRun.cached,
+            'process': trace.getProcessName(),
             'inputs': taskRun.inputs.collect { unwrap(it.value) },
             'outputs': taskRun.outputs.collect { unwrap(it.value) }
         ]
 
         this.tasks.add(taskMap)
+    }
+
+    @Override
+    void onProcessComplete(TaskHandler handler, TraceRecord trace){
+        trackProcess(handler, trace)
+    }
+
+    @Override
+    void onProcessCached(TaskHandler handler, TraceRecord trace){
+        trackProcess(handler, trace)
     }
 
     @Override
