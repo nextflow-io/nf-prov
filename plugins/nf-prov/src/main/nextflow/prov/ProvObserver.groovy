@@ -113,23 +113,27 @@ class ProvObserver implements TraceObserver {
         def taskConfig = taskRun.config
         def taskId = taskRun.id as String
 
+        // TODO: Figure out what the '$' input/output means
+        //       Omitting them from manifest for now
         def taskMap = [
             'id': taskId,
             'name': taskRun.getName(),
             'cached': taskRun.cached,
             'process': trace.getProcessName(),
-            'inputs': taskRun.inputs.collect { inParam, object -> 
-                [ 
+            'inputs': taskRun.inputs.findResults { inParam, object -> 
+                def inputMap = [ 
                     'name': inParam.getName(),
                     'value': jsonify(object) 
                 ] 
+                inputMap['name'] == '$' ? null : inputMap
             },
-            'outputs': taskRun.outputs.collect { outParam, object -> 
-                [
+            'outputs': taskRun.outputs.findResults { outParam, object -> 
+                def outputMap = [
                     'name': outParam.getName(),
                     'emit': outParam.getChannelEmitName(),
                     'value': jsonify(object) 
                 ] 
+                outputMap['name'] == '$' ? null : outputMap
             }
         ]
 
@@ -173,13 +177,19 @@ class ProvObserver implements TraceObserver {
         def outputTaskMap = [:]
         this.tasks.each { taskId, task ->
             task['outputs'].each { output ->
-                outputTaskMap.put(output['value'], task)
+                // Make sure to handle tuples of outputs
+                def values = output['value']
+                if ( values instanceof Collection ) {
+                    values.each { outputTaskMap.put(it, task['id']) }
+                } else {
+                    outputTaskMap.put(values, task['id'])
+                }
             }
         }
 
         // add task information to published files
         this.published.each { path ->
-            path['publishingTask'] = outputTaskMap[path.source]['id']
+            path['publishingTaskId'] = outputTaskMap[path.source]
         }
 
         // generate manifest map
