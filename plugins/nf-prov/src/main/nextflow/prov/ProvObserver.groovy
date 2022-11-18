@@ -55,7 +55,7 @@ class ProvObserver implements TraceObserver {
 
     private List<Map> published
 
-    private List<Map> tasks
+    private Map tasks
 
     @Override
     void onFlowCreate(Session session) {
@@ -81,22 +81,22 @@ class ProvObserver implements TraceObserver {
         }
 
         this.published = []
-        this.tasks = []
+        this.tasks = [:]
     }
 
-    static def unwrap(root) {
+    static def jsonify(root) {
         if ( root instanceof LinkedHashMap ) {
             root.eachWithIndex { key, value, index ->
-                root[key] = unwrap(value)
+                root[key] = jsonify(value)
             }
         } else if ( root instanceof Collection ) {
             root = new ArrayList(root);
             root.eachWithIndex { item, index ->
-                root[index] = unwrap(item)
+                root[index] = jsonify(item)
             }
         } else if ( root instanceof FileHolder ) {
             root = root.getStorePath()
-            root = unwrap(root)
+            root = jsonify(root)
         } else if ( root instanceof Path ) {
             root = root.toUriString()
         } else if ( root instanceof Boolean ||
@@ -111,17 +111,29 @@ class ProvObserver implements TraceObserver {
     void trackProcess(TaskHandler handler, TraceRecord trace){
         def taskRun = handler.getTask()
         def taskConfig = taskRun.config
+        def taskId = taskRun.id as String
 
         def taskMap = [
-            'id': taskRun.id as int,
+            'id': taskId,
             'name': taskRun.getName(),
             'cached': taskRun.cached,
             'process': trace.getProcessName(),
-            'inputs': taskRun.inputs.collect { inParam, object -> [ "${inParam.getName()}": unwrap(object) ] },
-            'outputs': taskRun.outputs.collect { outParam, object -> [ "${outParam.getName()}": unwrap(object) ] }
+            'inputs': taskRun.inputs.collect { inParam, object -> 
+                [ 
+                    'name': inParam.getName(),
+                    'value': jsonify(object) 
+                ] 
+            },
+            'outputs': taskRun.outputs.collect { outParam, object -> 
+                [
+                    'name': outParam.getName(),
+                    'emit': outParam.getChannelEmitName(),
+                    'value': jsonify(object) 
+                ] 
+            }
         ]
 
-        this.tasks.add(taskMap)
+        this.tasks.put(taskId, taskMap)
     }
 
     @Override
@@ -153,21 +165,21 @@ class ProvObserver implements TraceObserver {
     @Override
     void onFlowComplete() {
         // make sure there are files to publish
-        if ( !this.enabled || this.published.isEmpty() ) {
+        if ( !this.enabled ) {
             return
         }
 
         // generate temporary output-task map
         def outputTaskMap = [:]
-        this.tasks.each { task ->
-            task.outputs.each { output ->
-                outputTaskMap.put(output, task)
+        this.tasks.each { taskId, task ->
+            task['outputs'].each { output ->
+                outputTaskMap.put(output['value'], task)
             }
         }
 
         // add task information to published files
         this.published.each { path ->
-            path['publishingTask'] = outputTaskMap[path.source]
+            path['publishingTask'] = outputTaskMap[path.source]['id']
         }
 
         // generate manifest map
