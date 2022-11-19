@@ -1,2 +1,2 @@
 export NXF_PLUGINS_DEV=$PWD/plugins
- ../nextflow/launch.sh "$@"
+ ../nextflow-nf-prov/launch.sh "$@"

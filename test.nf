@@ -15,7 +15,8 @@ process RNG {
 
     script:
     """
-    echo \$RANDOM > ${prefix}.${constant}.txt
+    echo \$RANDOM > ${prefix}.${constant}.1.txt
+    echo \$RANDOM > ${prefix}.${constant}.2.txt
     """
 
 }
