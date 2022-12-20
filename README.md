@@ -4,12 +4,23 @@ Nextflow plugin for tracking provenance of pipeline output files.
 
 ## Getting Started
 
-To use the `nf-prov` plugin, you need Nextflow 22.04 (or later).
+First, `nf-prov` requires Nextflow version `22.11.0-edge` (or later). You can achieve this by running the following snippet before your `nextflow run` command. In Nextflow Tower, you can include this in your pre-run script under "Advanced Options" on the "Launch Pipeline" page.
 
-Add the following snippet to your `nextflow.config` to enable the plugin:
+```sh
+export NXF_VER=22.11.0-edge
+```
+
+Second, to enable and configure `nf-prov`, you must include the following snippet to your Nextflow config and update as needed. Note that the use of `params.outdir` assumes that you are using an nf-core pipeline with that parameter.
+
 ```groovy
 plugins {
-    id 'nf-prov'
+  id 'nf-prov'
+}
+
+prov {
+    enabled = true
+    overwrite = true
+    file = "${params.outdir}/manifest.json"
 }
 ```
 
