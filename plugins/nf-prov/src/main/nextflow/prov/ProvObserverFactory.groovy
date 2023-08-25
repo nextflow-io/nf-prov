@@ -16,6 +16,8 @@
 
 package nextflow.prov
 
+import java.nio.file.Path
+
 import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.trace.TraceObserver
@@ -31,8 +33,18 @@ class ProvObserverFactory implements TraceObserverFactory {
 
     @Override
     Collection<TraceObserver> create(Session session) {
-        final result = new ArrayList()
-        result.add( new ProvObserver() )
-        return result
+        [ createProvObserver(session.config) ]
+    }
+
+    protected TraceObserver createProvObserver(Map config) {
+        final enabled = config.navigate('prov.enabled', true) as Boolean
+        if( !enabled )
+            return
+
+        final file = config.navigate('prov.file', ProvObserver.DEF_FILE_NAME)
+        final path = (file as Path).complete()
+        final overwrite = config.navigate('prov.overwrite') as Boolean
+        final patterns = config.navigate('prov.patterns', []) as List
+        new ProvObserver(path, format, overwrite, patterns)
     }
 }
