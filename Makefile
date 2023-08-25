@@ -1,5 +1,6 @@
 
 config ?= compileClasspath
+version ?= $(shell grep 'Plugin-Version' plugins/nf-prov/src/resources/META-INF/MANIFEST.MF | awk '{ print $$2 }')
 
 ifdef module 
 mm = :${module}:
@@ -41,6 +42,11 @@ ifndef class
 else
 	./gradlew ${mm}test --tests ${class}
 endif
+
+install:
+	./gradlew copyPluginZip
+	rm -rf ${HOME}/.nextflow/plugins/nf-prov-${version}
+	cp -r build/plugins/nf-prov-${version} ${HOME}/.nextflow/plugins/
 
 #
 # Upload JAR artifacts to Maven Central

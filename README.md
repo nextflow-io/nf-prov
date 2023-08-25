@@ -34,6 +34,10 @@ Create the provenance manifest (default: `true` if plugin is loaded).
 
 The path of the provenance manifest (default: `manifest.json`).
 
+`prov.format`
+
+The manifest format. Can be `legacy` or `bco` (default: `legacy`).
+
 `prov.patterns`
 
 List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.

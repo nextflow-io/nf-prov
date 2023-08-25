@@ -7,4 +7,4 @@ gradle.properties
 # Ignore Gradle build output directory
 build
 work
-out
+results
