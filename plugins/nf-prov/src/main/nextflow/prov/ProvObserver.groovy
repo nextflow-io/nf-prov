@@ -84,7 +84,9 @@ class ProvObserver implements TraceObserver {
         // check file existance
         final attrs = FileHelper.readAttributes(path)
         if( attrs ) {
-            if( overwrite && (attrs.isDirectory() || !path.delete()) )
+            if( attrs.isDirectory() )
+                log.warn "Provenance output directory already exists: ${path.toUriString()}"
+            else if( overwrite && !path.delete() )
                 throw new AbortOperationException("Unable to overwrite existing provenance manifest: ${path.toUriString()}")
             else if( !overwrite )
                 throw new AbortOperationException("Provenance manifest already exists: ${path.toUriString()}")

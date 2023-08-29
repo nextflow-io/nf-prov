@@ -190,20 +190,11 @@ class BcoRenderer implements Renderer {
                     "@type": "Dataset",
                     "name": "Workflow run of ${metadata.projectName}",
                     "description": "${manifest.description}",
-                    "author": [
-                        "@id": "https://orcid.org/0000-0001-9842-9718"
-                    ],
                     "datePublished": "${dateCreated}",
-                    "distribution": [
-                        "@id": "https://github.com/stain/bco-ro-example-chipseq/archive/master.zip"
-                    ],
                     "hasPart": [
                         [
                             "@id": "${bcoPath.name}"
                         ]
-                    ],
-                    "license": [
-                        "@id": "https://spdx.org/licenses/CC0-1.0"
                     ]
                 ],
                 [

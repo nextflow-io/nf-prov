@@ -38,13 +38,21 @@ The path of the provenance manifest (default: `manifest.json`).
 
 The manifest format. Can be `legacy` or `bco` (default: `legacy`).
 
-`prov.patterns`
+`prov.metadata`
 
-List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.
+*Used only by the `bco` format*
+
+Map of additional metadata for the provenance manifest. The following keys are supported:
+
+- `license`
 
 `prov.overwrite`
 
 Overwrite any existing provenance report with the same name (default: `false`).
+
+`prov.patterns`
+
+List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.
 
 ## Development
 
