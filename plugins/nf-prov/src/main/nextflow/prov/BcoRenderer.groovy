@@ -16,6 +16,7 @@
 
 package nextflow.prov
 
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
@@ -93,11 +94,15 @@ class BcoRenderer implements Renderer {
      * @param path
      */
     private String normalizePath(Path path) {
+        normalizePath(path.toUriString())
+    }
+
+    private String normalizePath(String path) {
         // TODO: append raw github URL to git assets
-        path.toUriString()
-            .replace(metadata.workDir.toUriString(), '/work')
-            .replace(metadata.projectDir.toUriString(), '')
-            .replace(metadata.launchDir.toUriString(), '')
+        path
+            .replace(metadata.workDir.toUriString(), 'work')
+            .replace(metadata.projectDir.toUriString(), 'project')
+            .replace(metadata.launchDir.toUriString(), '.')
     }
 
     @Override
@@ -112,11 +117,13 @@ class BcoRenderer implements Renderer {
         // get workflow metadata
         this.metadata = session.workflowMetadata
         final manifest = metadata.manifest
-        final manifestExtra = session.config.navigate('prov.metadata', [:]) as Map
+        final nextflowMeta = metadata.nextflow
+        final params = session.config.params as Map
 
-        final formatter = DateTimeFormatter.ISO_INSTANT
+        final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         final dateCreated = formatter.format(metadata.start)
-        final authors = (manifest.author ?: '').tokenize(',')
+        final authors = (manifest.author ?: '').tokenize(',')*.trim()
+        final nextflowVersion = nextflowMeta.version.toString()
 
         // render BCO manifest
         final bcoPath = path.resolve('bco.json')
@@ -132,35 +139,72 @@ class BcoRenderer implements Renderer {
                 "contributors": authors.collect( name -> [
                     "contribution": ["authoredBy"],
                     "name": name
-                ] ),
-                "license": manifestExtra.license
+                ] )
             ],
+            "usability_domain": [],
+            "extension_domain": [],
             "description_domain": [
-                "pipeline_steps": tasks.collect { task -> [
+                "platform": ["Nextflow"],
+                "pipeline_steps": tasks.sort( (task) -> task.id ).collect { task -> [
                     "step_number": task.id,
                     "name": task.hash.toString(),
                     "description": task.name,
-                    "input_list": task.getInputFilesMap().collect { name, source -> 
-                        normalizePath(source)
-                    },
-                    "output_list": getTaskOutputs(task).collect { source ->
-                        normalizePath(source)
-                    }
+                    "input_list": task.getInputFilesMap().collect { name, source -> [
+                        "uri": normalizePath(source)
+                    ] },
+                    "output_list": getTaskOutputs(task).collect { source -> [
+                        "uri": normalizePath(source)
+                    ] }
                 ] },
             ],
             "execution_domain": [
                 "script": [ normalizePath(metadata.scriptFile) ],
-                "script_driver": "nextflow"
+                "script_driver": "nextflow",
+                "software_prerequisites": [
+                    [
+                        "name": "Nextflow",
+                        "version": nextflowVersion,
+                        "uri": [
+                            "uri": "https://github.com/nextflow-io/nextflow/releases/tag/v${nextflowVersion}"
+                        ]
+                    ]
+                ]
             ],
+            "parametric_domain": params.collect( (k, v) -> [
+                "param": k,
+                "value": normalizePath(v.toString())
+            ] ),
             "io_domain": [
-                "input_subdomain": workflowInputs.collect { source ->
-                    [ "uri": normalizePath(source) ]
-                },
-                "output_subdomain": workflowOutputs.collect { source, target ->
-                    [ "uri": normalizePath(target), "filename": normalizePath(source) ]
-                }
-            ]
+                "input_subdomain": workflowInputs.collect { source -> [
+                    "uri": [
+                        "uri": normalizePath(source)
+                    ]
+                ] },
+                "output_subdomain": workflowOutputs.collect { source, target -> [
+                    "mediatype": Files.probeContentType(source),
+                    "uri": [
+                        "filename": normalizePath(source),
+                        "uri": normalizePath(target)
+                    ]
+                ] }
+            ],
+            "error_domain": []
         ]
+
+        // append git repository info
+        if( metadata.repository ) {
+            final extension_domain = bco.extension_domain as List
+            extension_domain << [
+                "extension_schema": "https://w3id.org/biocompute/extension_domain/1.1.0/scm/scm_extension.json",
+                "scm_extension": [
+                    "scm_repository": metadata.repository,
+                    "scm_type": "git",
+                    "scm_commit": metadata.commitId,
+                    "scm_path": normalizePath(metadata.scriptFile),
+                    "scm_preview": "" // TODO: repository + commit + script path
+                ]
+            ]
+        }
 
         // compute etag
         // TODO: make a more canonical hash
@@ -168,7 +212,7 @@ class BcoRenderer implements Renderer {
 
         // append non-cacheable fields
         bco.object_id = "urn:uuid:${UUID.randomUUID()}"
-        bco.spec_version = "https://w3id.org/ieee/ieee-2791-schema/"
+        bco.spec_version = "https://w3id.org/ieee/ieee-2791-schema/2791object.json"
         bco.etag = etag.toString()
 
         // save BCO manifest to JSON file
