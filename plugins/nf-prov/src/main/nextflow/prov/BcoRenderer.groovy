@@ -1,5 +1,5 @@
 /*
- * Copyright 2022, Seqera Labs
+ * Copyright 2023, Seqera Labs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ import nextflow.Session
 import nextflow.exception.AbortOperationException
 import nextflow.processor.TaskRun
 import nextflow.script.WorkflowMetadata
-import nextflow.script.params.FileOutParam
 import nextflow.util.CacheHelper
 
 /**
@@ -38,55 +37,6 @@ import nextflow.util.CacheHelper
 class BcoRenderer implements Renderer {
 
     private WorkflowMetadata metadata
-
-    /**
-     * Get the list of output files for a task.
-     *
-     * @param task
-     */
-    private static List<Path> getTaskOutputs(TaskRun task) {
-        return task
-            .getOutputsByType(FileOutParam)
-            .values()
-            .flatten() as List<Path>
-    }
-
-    /**
-     * Get a mapping of output file to the task that produced it.
-     *
-     * @param tasks
-     */
-    private static Map<Path,TaskRun> getTaskLookup(Set<TaskRun> tasks) {
-        final taskLookup = [:] as Map<Path,TaskRun>
-
-        for( def task : tasks )
-            for( def output : getTaskOutputs(task) )
-                taskLookup[output] = task
-
-        return taskLookup
-    }
-
-    /**
-     * Get the list of workflow inputs. A workflow input is an input file
-     * to a task that was not produced by another task.
-     *
-     * @param tasks
-     * @param taskLookup
-     */
-    private static Set<Path> getWorkflowInputs(Set<TaskRun> tasks, Map<Path,TaskRun> taskLookup) {
-        final workflowInputs = [] as Set<Path>
-
-        tasks.each { task ->
-            task.getInputFilesMap().each { name, path ->
-                if( taskLookup[path] )
-                    return
-
-                workflowInputs << path
-            }
-        }
-
-        return workflowInputs
-    }
 
     /**
      * Normalize local paths to remove environment-specific directories.
@@ -107,12 +57,9 @@ class BcoRenderer implements Renderer {
 
     @Override
     void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs, Path path) {
-        if( !path.mkdirs() )
-            throw new AbortOperationException("Unable to create directory for provenance manifest: ${path.toUriString()}")
-
         // get workflow inputs
-        final taskLookup = getTaskLookup(tasks)
-        final workflowInputs = getWorkflowInputs(tasks, taskLookup)
+        final taskLookup = ProvHelper.getTaskLookup(tasks)
+        final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
 
         // get workflow metadata
         this.metadata = session.workflowMetadata
@@ -126,7 +73,6 @@ class BcoRenderer implements Renderer {
         final nextflowVersion = nextflowMeta.version.toString()
 
         // render BCO manifest
-        final bcoPath = path.resolve('bco.json')
         final bco = [
             "object_id": null,
             "spec_version": null,
@@ -152,7 +98,7 @@ class BcoRenderer implements Renderer {
                     "input_list": task.getInputFilesMap().collect { name, source -> [
                         "uri": normalizePath(source)
                     ] },
-                    "output_list": getTaskOutputs(task).collect { source -> [
+                    "output_list": ProvHelper.getTaskOutputs(task).collect { source -> [
                         "uri": normalizePath(source)
                     ] }
                 ] },
@@ -216,58 +162,7 @@ class BcoRenderer implements Renderer {
         bco.etag = etag.toString()
 
         // save BCO manifest to JSON file
-        bcoPath.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
-
-        // render RO-Crate manifest
-        final rocPath = path.resolve('ro-crate-metadata.json')
-        final roCrate = [
-            "@context": "https://w3id.org/ro/crate/1.1/context", 
-            "@graph": [
-                [
-                    "@id": "",
-                    "@type": "CreativeWork",
-                    "conformsTo": ["@id": "https://w3id.org/ro/crate/1.1"],
-                    "about": ["@id": "./"]
-                ],
-                [
-                    "@id": "./",
-                    "@type": "Dataset",
-                    "name": "Workflow run of ${metadata.projectName}",
-                    "description": "${manifest.description}",
-                    "datePublished": "${dateCreated}",
-                    "hasPart": [
-                        [
-                            "@id": "${bcoPath.name}"
-                        ]
-                    ]
-                ],
-                [
-                    "@id": "${bcoPath.name}",
-                    "@type": "File",
-                    "identifier": "${bco.object_id}",
-                    "name": "${bcoPath.name}",
-                    "description": "IEEE 2791 description (BioCompute Object) of ${metadata.projectName}",
-                    "encodingFormat": [
-                        "application/json", 
-                        ["@id": "https://www.nationalarchives.gov.uk/PRONOM/fmt/817"]
-                    ],    
-                    "conformsTo": [
-                        "@id": "https://w3id.org/ieee/ieee-2791-schema/"
-                    ]
-                ],
-                [
-                    "@id": "https://w3id.org/ieee/ieee-2791-schema/",
-                    "@type": "CreativeWork",
-                    "name": "IEEE 2791 Object Schema",
-                    "version": "1.4",
-                    "citation": "https://doi.org/10.1109/IEEESTD.2020.9094416",
-                    "subjectOf": ["@id": "https://www.biocomputeobject.org/"]
-                ]
-            ]
-        ]
-
-        // save RO-Crate manifest to JSON file
-        rocPath.text = JsonOutput.prettyPrint(JsonOutput.toJson(roCrate))
+        path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
     }
 
 }
