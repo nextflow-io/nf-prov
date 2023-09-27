@@ -36,7 +36,15 @@ import nextflow.util.CacheHelper
 @CompileStatic
 class BcoRenderer implements Renderer {
 
-    private WorkflowMetadata metadata
+    private URL repository
+
+    private String commitId
+
+    private String launchDir
+
+    private String projectDir
+
+    private String workDir
 
     /**
      * Normalize local paths to remove environment-specific directories.
@@ -48,11 +56,32 @@ class BcoRenderer implements Renderer {
     }
 
     private String normalizePath(String path) {
-        // TODO: append raw github URL to git assets
-        path
-            .replace(metadata.workDir.toUriString(), 'work')
-            .replace(metadata.projectDir.toUriString(), 'project')
-            .replace(metadata.launchDir.toUriString(), '.')
+        // replace work directory with relative path
+        if( path.startsWith(workDir) )
+            return path.replace(workDir, 'work')
+
+        // replace project directory with source URL (if applicable)
+        if( repository && path.startsWith(projectDir) )
+            return getProjectSourceUrl(path)
+
+        // replace launch directory with relative path
+        if( path.startsWith(launchDir) )
+            return path.replace(launchDir + '/', '')
+
+        return path
+    }
+
+    /**
+     * Get the source URL for a project asset.
+     *
+     * @param path
+     */
+    private String getProjectSourceUrl(String path) {
+        // TODO: add other git providers
+        if( repository.host == 'github.com' )
+            return path.replace(projectDir, "${repository}/tree/${commitId}")
+        else
+            return path
     }
 
     @Override
@@ -62,17 +91,21 @@ class BcoRenderer implements Renderer {
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
 
         // get workflow metadata
-        this.metadata = session.workflowMetadata
+        final metadata = session.workflowMetadata
         final manifest = metadata.manifest
         final nextflowMeta = metadata.nextflow
-        final params = session.config.params as Map
+        this.repository = metadata.repository ? new URL(metadata.repository) : null
+        this.commitId = metadata.commitId
+        this.projectDir = metadata.projectDir.toUriString()
+        this.launchDir = metadata.launchDir.toUriString()
+        this.workDir = metadata.workDir.toUriString()
 
-        final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-        final dateCreated = formatter.format(metadata.start)
+        final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
         final authors = (manifest.author ?: '').tokenize(',')*.trim()
         final nextflowVersion = nextflowMeta.version.toString()
+        final params = session.config.params as Map
 
-        // render BCO manifest
+        // create BCO manifest
         final bco = [
             "object_id": null,
             "spec_version": null,
@@ -146,8 +179,8 @@ class BcoRenderer implements Renderer {
                     "scm_repository": metadata.repository,
                     "scm_type": "git",
                     "scm_commit": metadata.commitId,
-                    "scm_path": normalizePath(metadata.scriptFile),
-                    "scm_preview": "" // TODO: repository + commit + script path
+                    "scm_path": metadata.scriptFile.toUriString().replace(projectDir + '/', ''),
+                    "scm_preview": normalizePath(metadata.scriptFile)
                 ]
             ]
         }
@@ -161,7 +194,7 @@ class BcoRenderer implements Renderer {
         bco.spec_version = "https://w3id.org/ieee/ieee-2791-schema/2791object.json"
         bco.etag = etag.toString()
 
-        // save BCO manifest to JSON file
+        // render BCO manifest to JSON file
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
     }
 
