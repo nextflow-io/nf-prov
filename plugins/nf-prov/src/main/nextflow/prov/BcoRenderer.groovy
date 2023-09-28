@@ -111,18 +111,20 @@ class BcoRenderer implements Renderer {
             "spec_version": null,
             "etag": null,
             "provenance_domain": [
-                "name": manifest.name,
-                "version": manifest.version,
+                "name": manifest.name ?: "",
+                "version": manifest.version ?: "",
                 "created": dateCreated,
                 "modified": dateCreated,
                 "contributors": authors.collect( name -> [
                     "contribution": ["authoredBy"],
                     "name": name
-                ] )
+                ] ),
+                "license": ""
             ],
             "usability_domain": [],
             "extension_domain": [],
             "description_domain": [
+                "keywords": [],
                 "platform": ["Nextflow"],
                 "pipeline_steps": tasks.sort( (task) -> task.id ).collect { task -> [
                     "step_number": task.id,
@@ -147,11 +149,14 @@ class BcoRenderer implements Renderer {
                             "uri": "https://github.com/nextflow-io/nextflow/releases/tag/v${nextflowVersion}"
                         ]
                     ]
-                ]
+                ],
+                "external_data_endpoints": [],
+                "environment_variables": [:]
             ],
             "parametric_domain": params.collect( (k, v) -> [
                 "param": k,
-                "value": normalizePath(v.toString())
+                "value": normalizePath(v.toString()),
+                "step": "0"
             ] ),
             "io_domain": [
                 "input_subdomain": workflowInputs.collect { source -> [
@@ -160,14 +165,17 @@ class BcoRenderer implements Renderer {
                     ]
                 ] },
                 "output_subdomain": workflowOutputs.collect { source, target -> [
-                    "mediatype": Files.probeContentType(source),
+                    "mediatype": Files.probeContentType(source) ?: "",
                     "uri": [
                         "filename": normalizePath(source),
                         "uri": normalizePath(target)
                     ]
                 ] }
             ],
-            "error_domain": []
+            "error_domain": [
+                "empirical_error": [:],
+                "algorithmic_error": [:]
+            ]
         ]
 
         // append git repository info

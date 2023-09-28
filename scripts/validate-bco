@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+
+'''
+Validate a BioCompute object manifest.
+
+Prerequisites:
+
+  git clone http://opensource.ieee.org/2791-object/ieee-2791-schema.git
+  pip install jsonschema
+
+Usage:
+
+  ./validate-bco <manifest>
+'''
+import json
+import jsonschema
+import sys
+
+if len(sys.argv) != 2:
+    print('usage: %s <manifest>' % (sys.argv[0]))
+    sys.exit(1)
+
+bco_filename = sys.argv[1]
+
+with open('ieee-2791-schema/2791object.json') as schema_file:
+    schema = json.load(schema_file)
+
+with open(bco_filename) as bco_file:
+    bco = json.load(bco_file)
+
+v = jsonschema.Draft7Validator(schema)
+has_errors = False
+for error in sorted(v.iter_errors(bco), key=str):
+    has_errors = True
+    print('%s: %s' % ('.'.join(str(v) for v in error.path), error.message))
+
+sys.exit(has_errors)
