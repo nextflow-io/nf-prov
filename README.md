@@ -4,7 +4,7 @@ Nextflow plugin for tracking provenance of pipeline output files.
 
 ## Getting Started
 
-The `nf-prov` plugin requires Nextflow version `22.11.0-edge` or later.
+The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
 
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
