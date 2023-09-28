@@ -20,15 +20,14 @@ import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.PathMatcher
 
-import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.trace.TraceObserver
 import nextflow.trace.TraceRecord
 import nextflow.file.FileHelper
-import nextflow.file.FileHolder
 import nextflow.processor.TaskHandler
+import nextflow.processor.TaskRun
 import nextflow.exception.AbortOperationException
 
 /**
@@ -43,29 +42,44 @@ class ProvObserver implements TraceObserver {
 
     public static final String DEF_FILE_NAME = 'manifest.json'
 
-    private Map config
+    public static final List<String> VALID_FORMATS = ['legacy', 'bco']
+
+    private Session session
 
     private Path path
+
+    private Renderer renderer
 
     private Boolean overwrite
 
     private List<PathMatcher> matchers
 
-    private List<Map> published = []
+    private Set<TaskRun> tasks = []
 
-    private Map tasks = [:]
+    private Map<Path,Path> publishedOutputs = [:]
 
-    ProvObserver(Path path, Boolean overwrite, List patterns) {
+    ProvObserver(Path path, String format, Boolean overwrite, List patterns) {
         this.path = path
+        this.renderer = createRenderer(format)
         this.overwrite = overwrite
         this.matchers = patterns.collect { pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
         }
     }
 
+    private Renderer createRenderer(String format) {
+        if( format == 'legacy' )
+            return new LegacyRenderer()
+
+        if( format == 'bco' )
+            return new BcoRenderer()
+
+        throw new IllegalArgumentException("Invalid provenance format -- valid formats are ${VALID_FORMATS.join(', ')}")
+    }
+
     @Override
     void onFlowCreate(Session session) {
-        this.config = session.config
+        this.session = session
 
         // check file existance
         final attrs = FileHelper.readAttributes(path)
@@ -77,64 +91,19 @@ class ProvObserver implements TraceObserver {
         }
     }
 
-    static def jsonify(root) {
-        if ( root instanceof Map )
-            root.collectEntries( (k, v) -> [k, jsonify(v)] )
-
-        else if ( root instanceof Collection )
-            root.collect( v -> jsonify(v) )
-
-        else if ( root instanceof FileHolder )
-            jsonify(root.storePath)
-
-        else if ( root instanceof Path )
-            root.toUriString()
-
-        else if ( root instanceof Boolean || root instanceof Number )
-            root
-
-        else
-            root.toString()
-    }
-
-    void trackProcess(TaskHandler handler, TraceRecord trace) {
-        def task = handler.task
-
-        // TODO: Figure out what the '$' input/output means
-        //       Omitting them from manifest for now
-        def taskMap = [
-            'id': task.id as String,
-            'name': task.name,
-            'cached': task.cached,
-            'process': trace.getProcessName(),
-            'inputs': task.inputs.findResults { inParam, object -> 
-                def inputMap = [ 
-                    'name': inParam.getName(),
-                    'value': jsonify(object) 
-                ] 
-                inputMap['name'] == '$' ? null : inputMap
-            },
-            'outputs': task.outputs.findResults { outParam, object -> 
-                def outputMap = [
-                    'name': outParam.getName(),
-                    'emit': outParam.getChannelEmitName(),
-                    'value': jsonify(object) 
-                ] 
-                outputMap['name'] == '$' ? null : outputMap
-            }
-        ]
-
-        tasks.put(task.id, taskMap)
-    }
-
     @Override
     void onProcessComplete(TaskHandler handler, TraceRecord trace) {
-        trackProcess(handler, trace)
+        // skip failed tasks
+        final task = handler.task
+        if( !task.isSuccess() )
+            return
+
+        tasks << task
     }
 
     @Override
     void onProcessCached(TaskHandler handler, TraceRecord trace) {
-        trackProcess(handler, trace)
+        tasks << handler.task
     }
 
     @Override
@@ -146,43 +115,15 @@ class ProvObserver implements TraceObserver {
         if( !match )
             return
 
-        published.add( [
-            'source': source.toUriString(),
-            'target': destination.toUriString()
-        ] )
+        publishedOutputs[source] = destination
     }
 
     @Override
     void onFlowComplete() {
-        // generate temporary output-task map
-        def taskLookup = tasks.inject([:]) { accum, hash, task ->
-            task['outputs'].each { output ->
-                // Make sure to handle tuples of outputs
-                def values = output['value']
-                if ( values instanceof Collection )
-                    values.each { accum.put(it, task['id']) }
-                else
-                    accum.put(values, task['id'])
-            }
-            accum
-        }
+        if( !session.isSuccess() )
+            return
 
-        // add task information to published files
-        published.each { path ->
-            path['publishingTaskId'] = taskLookup[path.source]
-        }
-
-        // save manifest to JSON file
-        def manifest = [
-            'pipeline': config.manifest,
-            'published': published,
-            'tasks': tasks
-        ]
-        def manifestJson = JsonOutput.toJson(manifest)
-        def manifestJsonPretty = JsonOutput.prettyPrint(manifestJson)
-
-        path.text = manifestJsonPretty
-
+        renderer.render(session, tasks, publishedOutputs, path)
     }
 
 }

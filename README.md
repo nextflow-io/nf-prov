@@ -34,31 +34,37 @@ Create the provenance manifest (default: `true` if plugin is loaded).
 
 The path of the provenance manifest (default: `manifest.json`).
 
-`prov.patterns`
+`prov.format`
 
-List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.
+The manifest format. Can be `legacy` or `bco` (default: `legacy`).
+
+*Note: The BCO format is experimental and may change in future releases. Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.*
 
 `prov.overwrite`
 
 Overwrite any existing provenance report with the same name (default: `false`).
 
+`prov.patterns`
+
+List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.
+
 ## Development
 
 Run the following commands to build and test the nf-prov Nextflow plugin. Refer to the [nf-hello](https://github.com/nextflow-io/nf-hello) README for additional instructions (_e.g._ for publishing the plugin).
 
-```console
+```bash
 # (Optional) Checkout relevant feature branch
 # git checkout <branch>
 
 # Create an empty folder for nf-prov and nextflow repos
-git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow-nf-prov
+git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow
 
 # Prepare the nextflow repo
-cd ../nextflow-nf-prov && ./gradlew compile exportClasspath && cd -
+cd ../nextflow && ./gradlew compile exportClasspath && cd -
 
 # Prepare the nf-prov repo
 grep -v 'includeBuild' settings.gradle > settings.gradle.bkp
-echo "includeBuild('../nextflow-nf-prov')" >> settings.gradle.bkp
+echo "includeBuild('../nextflow')" >> settings.gradle.bkp
 mv -f settings.gradle.bkp settings.gradle
 ./gradlew assemble
 
@@ -69,7 +75,7 @@ mv -f settings.gradle.bkp settings.gradle
 ## Package, Upload, and Publish
 
 The project should hosted in a GitHub repository whose name should match the name of the plugin,
-that is the name of the directory in the `plugins` folder e.g. `nf-synapse` in this project.
+that is the name of the directory in the `plugins` folder e.g. `nf-prov` in this project.
 
 Following these step to package, upload and publish the plugin:
 
@@ -83,13 +89,13 @@ Following these step to package, upload and publish the plugin:
 
 2. Update the `Plugin-Version` field in the following file with the release version:
 
-    ```
+    ```bash
     plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
     ```
 
 3. Run the following command to package and upload the plugin in the GitHub project releases page:
 
-    ```
+    ```bash
     ./gradlew :plugins:nf-prov:upload
     ```
 
