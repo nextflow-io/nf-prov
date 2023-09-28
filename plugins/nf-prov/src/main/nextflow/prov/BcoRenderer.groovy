@@ -153,7 +153,7 @@ class BcoRenderer implements Renderer {
                 "external_data_endpoints": [],
                 "environment_variables": [:]
             ],
-            "parametric_domain": params.collect( (k, v) -> [
+            "parametric_domain": params.toConfigObject().flatten().collect( (k, v) -> [
                 "param": k,
                 "value": normalizePath(v.toString()),
                 "step": "0"
