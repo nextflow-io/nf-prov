@@ -1,6 +1,6 @@
 Manifest-Version: 1.0
 Plugin-Id: nf-prov
-Plugin-Version: 1.0.0
+Plugin-Version: 1.1.0
 Plugin-Class: nextflow.prov.ProvPlugin
 Plugin-Provider: nextflow
-Plugin-Requires: >=22.11.0-edge
+Plugin-Requires: >=23.04.0
