@@ -27,7 +27,8 @@ class ProvObserverFactoryTest extends Specification {
 
     def 'should return observer' () {
         when:
-        def result = new ProvObserverFactory().create(Mock(Session))
+        def session = Spy(Session)
+        def result = new ProvObserverFactory().create(session)
         then:
         result.size()==1
         result[0] instanceof ProvObserver
