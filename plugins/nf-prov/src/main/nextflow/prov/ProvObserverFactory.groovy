@@ -43,7 +43,7 @@ class ProvObserverFactory implements TraceObserverFactory {
 
         final file = config.navigate('prov.file', ProvObserver.DEF_FILE_NAME)
         final path = (file as Path).complete()
-        final format = config.navigate('prov.format', 'legacy') as String
+        final format = config.navigate('prov.format', 'bco') as String
         final overwrite = config.navigate('prov.overwrite') as Boolean
         final patterns = config.navigate('prov.patterns', []) as List
         new ProvObserver(path, format, overwrite, patterns)

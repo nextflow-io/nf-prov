@@ -16,7 +16,7 @@ plugins {
 prov {
     enabled = true
     overwrite = true
-    file = "${params.outdir}/manifest.json"
+    file = "${params.outdir}/bco.json"
 }
 ```
 
@@ -36,7 +36,7 @@ The path of the provenance manifest (default: `manifest.json`).
 
 `prov.format`
 
-The manifest format. Can be `legacy` or `bco` (default: `legacy`).
+The manifest format. Can be `legacy` or `bco` (default: `bco`).
 
 *Note: The BCO format is experimental and may change in future releases. Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.*
 
