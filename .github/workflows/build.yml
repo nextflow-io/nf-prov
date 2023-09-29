@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        java_version: [8, 11]
+        java_version: [11, 17]
 
     steps:
       - name: Environment
@@ -34,12 +34,7 @@ jobs:
         with:
           java-version: ${{matrix.java_version}}
           architecture: x64
-
-      - name: Setup Nextflow
-        run: |
-          git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow
-          cd ../nextflow && ./gradlew compile exportClasspath && cd -
-          echo "includeBuild('../nextflow')" >> settings.gradle
+          distribution: 'temurin'
       
       - name: Compile
         run: ./gradlew assemble
