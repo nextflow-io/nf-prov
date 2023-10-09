@@ -19,7 +19,9 @@ package nextflow.prov
 import java.nio.file.Path
 
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 import nextflow.Session
+import nextflow.exception.AbortOperationException
 import nextflow.trace.TraceObserver
 import nextflow.trace.TraceObserverFactory
 
@@ -28,6 +30,7 @@ import nextflow.trace.TraceObserverFactory
  *
  * @author Ben Sherman <bentshermann@gmail.com>
  */
+@Slf4j
 @CompileStatic
 class ProvObserverFactory implements TraceObserverFactory {
 
@@ -41,11 +44,21 @@ class ProvObserverFactory implements TraceObserverFactory {
         if( !enabled )
             return
 
-        final file = config.navigate('prov.file', ProvObserver.DEF_FILE_NAME)
-        final path = (file as Path).complete()
-        final format = config.navigate('prov.format', 'legacy') as String
+        final format = config.navigate('prov.format') as String
+        final file = config.navigate('prov.file', 'manifest.json') as String
         final overwrite = config.navigate('prov.overwrite') as Boolean
-        final patterns = config.navigate('prov.patterns', []) as List
-        new ProvObserver(path, format, overwrite, patterns)
+        def formats = [:]
+        if( format ) {
+            log.warn "Config options `prov.format`, `prov.file`, and `prov.overwrite` are deprecated -- use `prov.formats` instead"
+            formats[format] = [file: file, overwrite: overwrite]
+        }
+
+        formats = config.navigate('prov.formats', formats) as Map
+
+        if( !formats )
+            throw new AbortOperationException("Config setting `prov.formats` is required to specify provenance output formats")
+
+        final patterns = config.navigate('prov.patterns', []) as List<String>
+        new ProvObserver(formats, patterns)
     }
 }

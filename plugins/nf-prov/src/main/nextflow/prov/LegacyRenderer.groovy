@@ -32,6 +32,17 @@ import nextflow.processor.TaskRun
 @CompileStatic
 class LegacyRenderer implements Renderer {
 
+    private Path path
+
+    private boolean overwrite
+
+    LegacyRenderer(Map opts) {
+        path = opts.file as Path
+        overwrite = opts.overwrite as Boolean
+
+        ProvHelper.checkFileOverwrite(path, overwrite)
+    }
+
     private static def jsonify(root) {
         if ( root instanceof Map )
             root.collectEntries( (k, v) -> [k, jsonify(v)] )
@@ -79,7 +90,7 @@ class LegacyRenderer implements Renderer {
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> outputs, Path path) {
+    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> outputs) {
         // generate task manifest
         def tasksMap = tasks.inject([:]) { accum, task ->
             accum[task.id] = renderTask(task)

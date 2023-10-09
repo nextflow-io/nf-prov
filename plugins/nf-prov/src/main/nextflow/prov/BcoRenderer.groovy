@@ -35,11 +35,22 @@ import nextflow.util.CacheHelper
 @CompileStatic
 class BcoRenderer implements Renderer {
 
+    private Path path
+
+    private boolean overwrite
+
     @Delegate
     private PathNormalizer normalizer
 
+    BcoRenderer(Map opts) {
+        path = opts.file as Path
+        overwrite = opts.overwrite as Boolean
+
+        ProvHelper.checkFileOverwrite(path, overwrite)
+    }
+
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs, Path path) {
+    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
