@@ -23,7 +23,6 @@ import java.time.format.DateTimeFormatter
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
-import nextflow.exception.AbortOperationException
 import nextflow.processor.TaskRun
 import nextflow.script.WorkflowMetadata
 import nextflow.util.CacheHelper
@@ -36,53 +35,8 @@ import nextflow.util.CacheHelper
 @CompileStatic
 class BcoRenderer implements Renderer {
 
-    private URL repository
-
-    private String commitId
-
-    private String launchDir
-
-    private String projectDir
-
-    private String workDir
-
-    /**
-     * Normalize local paths to remove environment-specific directories.
-     *
-     * @param path
-     */
-    private String normalizePath(Path path) {
-        normalizePath(path.toUriString())
-    }
-
-    private String normalizePath(String path) {
-        // replace work directory with relative path
-        if( path.startsWith(workDir) )
-            return path.replace(workDir, 'work')
-
-        // replace project directory with source URL (if applicable)
-        if( repository && path.startsWith(projectDir) )
-            return getProjectSourceUrl(path)
-
-        // replace launch directory with relative path
-        if( path.startsWith(launchDir) )
-            return path.replace(launchDir + '/', '')
-
-        return path
-    }
-
-    /**
-     * Get the source URL for a project asset.
-     *
-     * @param path
-     */
-    private String getProjectSourceUrl(String path) {
-        // TODO: add other git providers
-        if( repository.host == 'github.com' )
-            return path.replace(projectDir, "${repository}/tree/${commitId}")
-        else
-            return path
-    }
+    @Delegate
+    private PathNormalizer normalizer
 
     @Override
     void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs, Path path) {
@@ -92,13 +46,10 @@ class BcoRenderer implements Renderer {
 
         // get workflow metadata
         final metadata = session.workflowMetadata
+        this.normalizer = new PathNormalizer(metadata)
+
         final manifest = metadata.manifest
         final nextflowMeta = metadata.nextflow
-        this.repository = metadata.repository ? new URL(metadata.repository) : null
-        this.commitId = metadata.commitId
-        this.projectDir = metadata.projectDir.toUriString()
-        this.launchDir = metadata.launchDir.toUriString()
-        this.workDir = metadata.workDir.toUriString()
 
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
         final authors = (manifest.author ?: '').tokenize(',')*.trim()
@@ -181,13 +132,16 @@ class BcoRenderer implements Renderer {
         // append git repository info
         if( metadata.repository ) {
             final extension_domain = bco.extension_domain as List
+            final scriptFile = metadata.scriptFile.toUriString()
+            final projectDir = metadata.projectDir.toUriString()
+
             extension_domain << [
                 "extension_schema": "https://w3id.org/biocompute/extension_domain/1.1.0/scm/scm_extension.json",
                 "scm_extension": [
                     "scm_repository": metadata.repository,
                     "scm_type": "git",
                     "scm_commit": metadata.commitId,
-                    "scm_path": metadata.scriptFile.toUriString().replace(projectDir + '/', ''),
+                    "scm_path": scriptFile.replace(projectDir + '/', ''),
                     "scm_preview": normalizePath(metadata.scriptFile)
                 ]
             ]

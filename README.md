@@ -28,17 +28,23 @@ The following options are available:
 
 `prov.enabled`
 
-Create the provenance manifest (default: `true` if plugin is loaded).
+Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.file`
 
-The path of the provenance manifest (default: `manifest.json`).
+The path of the provenance report (default: `manifest.json`).
 
 `prov.format`
 
-The manifest format. Can be `legacy` or `bco` (default: `legacy`).
+The report format. The following formats are available:
 
-*Note: The BCO format is experimental and may change in future releases. Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.*
+- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/).
+
+  Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.
+
+- `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document.
+
+- `legacy`: Render the legacy format originally defined in this plugin (default).
 
 `prov.overwrite`
 
@@ -46,7 +52,7 @@ Overwrite any existing provenance report with the same name (default: `false`).
 
 `prov.patterns`
 
-List of file patterns to include in the provenance manifest, from the set of published files. By default, all published files are included.
+List of file patterns to include in the provenance report, from the set of published files. By default, all published files are included.
 
 ## Development
 

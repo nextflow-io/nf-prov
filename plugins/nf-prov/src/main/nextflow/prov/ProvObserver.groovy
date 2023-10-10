@@ -42,7 +42,7 @@ class ProvObserver implements TraceObserver {
 
     public static final String DEF_FILE_NAME = 'manifest.json'
 
-    public static final List<String> VALID_FORMATS = ['legacy', 'bco']
+    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy']
 
     private Session session
 
@@ -56,7 +56,7 @@ class ProvObserver implements TraceObserver {
 
     private Set<TaskRun> tasks = []
 
-    private Map<Path,Path> publishedOutputs = [:]
+    private Map<Path,Path> workflowOutputs = [:]
 
     ProvObserver(Path path, String format, Boolean overwrite, List patterns) {
         this.path = path
@@ -68,11 +68,14 @@ class ProvObserver implements TraceObserver {
     }
 
     private Renderer createRenderer(String format) {
-        if( format == 'legacy' )
-            return new LegacyRenderer()
-
         if( format == 'bco' )
             return new BcoRenderer()
+
+        if( format == 'dag' )
+            return new DagRenderer()
+
+        if( format == 'legacy' )
+            return new LegacyRenderer()
 
         throw new IllegalArgumentException("Invalid provenance format -- valid formats are ${VALID_FORMATS.join(', ')}")
     }
@@ -115,7 +118,7 @@ class ProvObserver implements TraceObserver {
         if( !match )
             return
 
-        publishedOutputs[source] = destination
+        workflowOutputs[source] = destination
     }
 
     @Override
@@ -123,7 +126,7 @@ class ProvObserver implements TraceObserver {
         if( !session.isSuccess() )
             return
 
-        renderer.render(session, tasks, publishedOutputs, path)
+        renderer.render(session, tasks, workflowOutputs, path)
     }
 
 }
