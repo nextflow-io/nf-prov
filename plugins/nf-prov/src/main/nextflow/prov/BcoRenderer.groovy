@@ -35,6 +35,56 @@ import nextflow.util.CacheHelper
 @CompileStatic
 class BcoRenderer implements Renderer {
 
+    private URL repository
+
+    private String commitId
+
+    private String launchDir
+
+    private String projectDir
+
+    private String workDir
+
+    /**
+     * Normalize local paths to remove environment-specific directories.
+     *
+     * @param path
+     */
+    private String normalizePath(Path path) {
+        normalizePath(path.toUriString())
+    }
+
+    private String normalizePath(String path) {
+        // replace work directory with relative path
+        if( path.startsWith(workDir) )
+            return path.replace(workDir, 'work')
+
+        // replace project directory with source URL (if applicable)
+        if( repository && path.startsWith(projectDir) )
+            return getProjectSourceUrl(path)
+
+        // replace launch directory with relative path
+        if( path.startsWith(launchDir) )
+            return path.replace(launchDir + '/', '')
+
+        return path
+    }
+
+    /**
+     * Get the source URL for a project asset.
+     *
+     * @param path
+     */
+    private String getProjectSourceUrl(String path) {
+        // TODO: add other git providers
+        if( repository.host == 'github.com' )
+            return path.replace(projectDir, "${repository}/tree/${commitId}")
+        else if( repository.host == 'bitbucket.org' )
+            return path.replace(projectDir, "${repository}/src/${commitId}")
+        else
+            return path
+    }
+
     @Delegate
     private PathNormalizer normalizer
 
@@ -50,6 +100,12 @@ class BcoRenderer implements Renderer {
 
         final manifest = metadata.manifest
         final nextflowMeta = metadata.nextflow
+
+        this.repository = metadata.repository ? new URL(metadata.repository) : null
+        this.commitId = metadata.commitId
+        this.projectDir = metadata.projectDir.toUriString()
+        this.launchDir = metadata.launchDir.toUriString()
+        this.workDir = metadata.workDir.toUriString()
 
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
         final authors = (manifest.author ?: '').tokenize(',')*.trim()
