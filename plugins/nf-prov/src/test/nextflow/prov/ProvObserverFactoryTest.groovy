@@ -27,7 +27,18 @@ class ProvObserverFactoryTest extends Specification {
 
     def 'should return observer' () {
         when:
-        def session = Spy(Session)
+        def config = [
+            prov: [
+                formats: [
+                    legacy: [
+                        file: 'manifest.json'
+                    ]
+                ]
+            ]
+        ]
+        def session = Spy(Session) {
+            getConfig() >> config
+        }
         def result = new ProvObserverFactory().create(session)
         then:
         result.size()==1

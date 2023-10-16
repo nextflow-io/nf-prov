@@ -14,9 +14,13 @@ plugins {
 }
 
 prov {
-    enabled = true
-    overwrite = true
-    file = "${params.outdir}/manifest.json"
+  enabled = true
+  formats {
+    legacy {
+      file = 'manifest.json'
+      overwrite = true
+    }
+  }
 }
 ```
 
@@ -24,31 +28,42 @@ Finally, run your Nextflow pipeline. You do not need to modify your pipeline scr
 
 ## Configuration
 
+*The `file`, `format`, and `overwrite` options have been deprecated since version 1.2.0. Use `formats` instead.*
+
 The following options are available:
 
 `prov.enabled`
 
 Create the provenance report (default: `true` if plugin is loaded).
 
-`prov.file`
+`prov.formats`
 
-The path of the provenance report (default: `manifest.json`).
+Configuration scope for the desired output formats. The following formats are available:
 
-`prov.format`
-
-The report format. The following formats are available:
-
-- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/).
+- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
 
   Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.
 
-- `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document.
+- `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
-- `legacy`: Render the legacy format originally defined in this plugin (default).
+- `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
 
-`prov.overwrite`
+Any number of formats can be specified, for example:
 
-Overwrite any existing provenance report with the same name (default: `false`).
+```groovy
+prov {
+  formats {
+    bco {
+      file = 'bco.json'
+      overwrite = true
+    }
+    legacy {
+      file = 'manifest.json'
+      overwrite = true
+    }
+  }
+}
+```
 
 `prov.patterns`
 

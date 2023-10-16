@@ -23,12 +23,10 @@ import java.nio.file.PathMatcher
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
-import nextflow.trace.TraceObserver
-import nextflow.trace.TraceRecord
-import nextflow.file.FileHelper
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
-import nextflow.exception.AbortOperationException
+import nextflow.trace.TraceObserver
+import nextflow.trace.TraceRecord
 
 /**
  * Plugin observer of workflow events
@@ -40,17 +38,11 @@ import nextflow.exception.AbortOperationException
 @CompileStatic
 class ProvObserver implements TraceObserver {
 
-    public static final String DEF_FILE_NAME = 'manifest.json'
-
     public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy']
 
     private Session session
 
-    private Path path
-
-    private Renderer renderer
-
-    private Boolean overwrite
+    private List<Renderer> renderers
 
     private List<PathMatcher> matchers
 
@@ -58,24 +50,22 @@ class ProvObserver implements TraceObserver {
 
     private Map<Path,Path> workflowOutputs = [:]
 
-    ProvObserver(Path path, String format, Boolean overwrite, List patterns) {
-        this.path = path
-        this.renderer = createRenderer(format)
-        this.overwrite = overwrite
-        this.matchers = patterns.collect { pattern ->
+    ProvObserver(Map<String,Map> formats, List<String> patterns) {
+        this.renderers = formats.collect( (name, config) -> createRenderer(name, config) )
+        this.matchers = patterns.collect( pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
-        }
+        )
     }
 
-    private Renderer createRenderer(String format) {
-        if( format == 'bco' )
-            return new BcoRenderer()
+    private Renderer createRenderer(String name, Map opts) {
+        if( name == 'bco' )
+            return new BcoRenderer(opts)
 
-        if( format == 'dag' )
-            return new DagRenderer()
+        if( name == 'dag' )
+            return new DagRenderer(opts)
 
-        if( format == 'legacy' )
-            return new LegacyRenderer()
+        if( name == 'legacy' )
+            return new LegacyRenderer(opts)
 
         throw new IllegalArgumentException("Invalid provenance format -- valid formats are ${VALID_FORMATS.join(', ')}")
     }
@@ -83,15 +73,6 @@ class ProvObserver implements TraceObserver {
     @Override
     void onFlowCreate(Session session) {
         this.session = session
-
-        // check file existance
-        final attrs = FileHelper.readAttributes(path)
-        if( attrs ) {
-            if( overwrite && (attrs.isDirectory() || !path.delete()) )
-                throw new AbortOperationException("Unable to overwrite existing provenance manifest: ${path.toUriString()}")
-            else if( !overwrite )
-                throw new AbortOperationException("Provenance manifest already exists: ${path.toUriString()}")
-        }
     }
 
     @Override
@@ -126,7 +107,9 @@ class ProvObserver implements TraceObserver {
         if( !session.isSuccess() )
             return
 
-        renderer.render(session, tasks, workflowOutputs, path)
+        renderers.each( renderer ->
+            renderer.render(session, tasks, workflowOutputs)
+        )
     }
 
 }

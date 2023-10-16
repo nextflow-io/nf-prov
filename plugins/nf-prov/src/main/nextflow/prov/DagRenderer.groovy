@@ -33,11 +33,22 @@ import nextflow.util.StringUtils
 @CompileStatic
 class DagRenderer implements Renderer {
 
+    private Path path
+
+    private boolean overwrite
+
     @Delegate
     private PathNormalizer normalizer
 
+    DagRenderer(Map opts) {
+        path = opts.file as Path
+        overwrite = opts.overwrite as Boolean
+
+        ProvHelper.checkFileOverwrite(path, overwrite)
+    }
+
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs, Path path) {
+    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
         // get workflow metadata
         final metadata = session.workflowMetadata
         this.normalizer = new PathNormalizer(metadata)

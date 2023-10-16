@@ -19,6 +19,8 @@ package nextflow.prov
 import java.nio.file.Path
 
 import groovy.transform.CompileStatic
+import nextflow.exception.AbortOperationException
+import nextflow.file.FileHelper
 import nextflow.processor.TaskRun
 import nextflow.script.params.FileOutParam
 
@@ -29,6 +31,23 @@ import nextflow.script.params.FileOutParam
  */
 @CompileStatic
 class ProvHelper {
+
+    /**
+     * Check whether a file already exists and throw an
+     * error if it cannot be overwritten.
+     *
+     * @param path
+     * @param overwrite
+     */
+    static void checkFileOverwrite(Path path, boolean overwrite) {
+        final attrs = FileHelper.readAttributes(path)
+        if( attrs ) {
+            if( overwrite && (attrs.isDirectory() || !path.delete()) )
+                throw new AbortOperationException("Unable to overwrite existing provenance file: ${path.toUriString()}")
+            else if( !overwrite )
+                throw new AbortOperationException("Provenance file already exists: ${path.toUriString()}")
+        }
+    }
 
     /**
      * Get the list of output files for a task.
