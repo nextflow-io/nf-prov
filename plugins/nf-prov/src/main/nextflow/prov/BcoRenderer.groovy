@@ -81,6 +81,8 @@ class BcoRenderer implements Renderer {
             return path.replace(projectDir, "${repository}/tree/${commitId}")
         else if( repository.host == 'bitbucket.org' )
             return path.replace(projectDir, "${repository}/src/${commitId}")
+        else if( repository.host == 'gitlab.com' )
+            return path.replace(projectDir, "${repository}/-/tree/${commitId}")
         else
             return path
     }
