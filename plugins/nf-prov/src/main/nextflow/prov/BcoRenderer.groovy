@@ -85,10 +85,13 @@ class BcoRenderer implements Renderer {
             return path.replace(projectDir, "${repository}/tree/${commitId}")
         else if( repository.host == 'bitbucket.org' )
             return path.replace(projectDir, "${repository}/src/${commitId}")
+        else if( repository.host == 'gitlab.com' )
+            return path.replace(projectDir, "${repository}/-/tree/${commitId}")
+        else if( repository.host == 'dev.azure.com' )
+            return path.replace(projectDir, "${repository}/_git/${commitId}")
         else
             return path
     }
->>>>>>> 79732f7 (Add Bitbucket)
 
     @Delegate
     private PathNormalizer normalizer
