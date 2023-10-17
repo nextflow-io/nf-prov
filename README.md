@@ -72,9 +72,9 @@ List of file patterns to include in the provenance report, from the set of publi
 ## Examples
 
 ```bash
+nextflow run https://github.com/ORGANIZATION/REPOSITORY_ID -profile docker
 nextflow run https://bitbucket.org/ORGANIZATION/REPOSITORY_ID -profile docker
 nextflow run https://gitlab.com/PROJECT/REPOSITORY_ID -profile docker
-nextflow run https://dev.azure.com/ORGANIZATION/PROJECT/REPOSITORY_ID -profile docker
 ```
 
 ## Development
