@@ -69,14 +69,6 @@ prov {
 
 List of file patterns to include in the provenance report, from the set of published files. By default, all published files are included.
 
-## Examples
-
-```bash
-nextflow run https://github.com/ORGANIZATION/REPOSITORY_ID -profile docker
-nextflow run https://bitbucket.org/ORGANIZATION/REPOSITORY_ID -profile docker
-nextflow run https://gitlab.com/PROJECT/REPOSITORY_ID -profile docker
-```
-
 ## Development
 
 Run the following commands to build and test the nf-prov Nextflow plugin. Refer to the [nf-hello](https://github.com/nextflow-io/nf-hello) README for additional instructions (_e.g._ for publishing the plugin).

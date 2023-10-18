@@ -79,11 +79,16 @@ class PathNormalizer {
      * @param path
      */
     private String getProjectSourceUrl(String path) {
-        // TODO: add other git providers
-        if( repository.host == 'github.com' )
+        switch( repository.host ) {
+        case 'bitbucket.org':
+            return path.replace(projectDir, "${repository}/src/${commitId}")
+        case 'github.com':
             return path.replace(projectDir, "${repository}/tree/${commitId}")
-        else
+        case 'gitlab.com':
+            return path.replace(projectDir, "${repository}/-/tree/${commitId}")
+        default:
             return path
+        }
     }
 
 }
