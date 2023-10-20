@@ -24,7 +24,7 @@ prov {
 }
 ```
 
-Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically generate a JSON file with provenance information.
+Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically produce the specified provenance reports at the end of the workflow run.
 
 ## Configuration
 
@@ -47,6 +47,8 @@ Configuration scope for the desired output formats. The following formats are av
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
 - `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
+
+- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance).
 
 Any number of formats can be specified, for example:
 
