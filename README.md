@@ -38,6 +38,8 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.formats`
 
+*New in version 1.2.0*
+
 Configuration scope for the desired output formats. The following formats are available:
 
 - `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
