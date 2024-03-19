@@ -80,7 +80,7 @@ Run the following commands to build and test the nf-prov Nextflow plugin. Refer 
 # git checkout <branch>
 
 # Create an empty folder for nf-prov and nextflow repos
-git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow
+git clone --depth 1 -b STABLE-23.10.x https://github.com/nextflow-io/nextflow ../nextflow
 
 # Prepare the nextflow repo
 cd ../nextflow && ./gradlew compile exportClasspath && cd -
