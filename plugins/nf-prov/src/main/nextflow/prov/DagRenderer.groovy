@@ -64,7 +64,7 @@ class DagRenderer implements Renderer {
     }
 
     private Map<TaskRun,Vertex> getVertices(Set<TaskRun> tasks) {
-        def result = [:]
+        def result = new LinkedHashMap<TaskRun, Vertex>();
         for( def task : tasks ) {
             final inputs = task.getInputFilesMap()
             final outputs = ProvHelper.getTaskOutputs(task)
