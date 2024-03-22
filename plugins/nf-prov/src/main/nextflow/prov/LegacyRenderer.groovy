@@ -71,6 +71,7 @@ class LegacyRenderer implements Renderer {
             'name': task.name,
             'cached': task.cached,
             'process': task.processor.name,
+            'script': task.script,
             'inputs': task.inputs.findResults { inParam, object -> 
                 def inputMap = [ 
                     'name': inParam.getName(),
