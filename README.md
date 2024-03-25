@@ -95,6 +95,17 @@ mv -f settings.gradle.bkp settings.gradle
 ./launch.sh run test.nf -plugins nf-prov
 ```
 
+An alternative method to build and test the plugin for development purposes;
+
+```bash
+# builds the plugin .zip and copies it to the local ${HOME}/.nextflow/plugins,
+# removing any pre-existing version
+make install
+
+# run with an externally installed nextflow using the included test workflow & config
+nextflow run tests/test.nf
+```
+
 ## Package, Upload, and Publish
 
 The project should hosted in a GitHub repository whose name should match the name of the plugin,
@@ -122,6 +133,6 @@ Following these step to package, upload and publish the plugin:
     ./gradlew :plugins:nf-prov:upload
     ```
 
-4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) 
-  project to make the plugin public accessible to Nextflow app. 
+4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
+  project to make the plugin public accessible to Nextflow app.
 
