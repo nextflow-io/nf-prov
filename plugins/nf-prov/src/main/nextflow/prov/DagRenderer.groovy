@@ -106,11 +106,11 @@ class DagRenderer implements Renderer {
         final taskTree = getTaskTree(dag.vertices)
 
         // render diagram
-        def lines = [] as List<String>
+        List<String> lines = []
         lines << "flowchart TD"
 
         // render workflow inputs
-        final inputs = [:] as Map<Path,String>
+        Map<Path,String> inputs = [:]
 
         lines << "    subgraph \" \""
 
