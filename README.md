@@ -95,7 +95,7 @@ mv -f settings.gradle.bkp settings.gradle
 ./launch.sh run test.nf -plugins nf-prov
 ```
 
-An alternative method to build and test the plugin for development purposes;
+An alternative method to build and test the plugin for development purposes:
 
 ```bash
 # builds the plugin .zip and copies it to the local ${HOME}/.nextflow/plugins,
