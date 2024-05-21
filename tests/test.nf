@@ -28,10 +28,10 @@ process EXEC_FOO {
     tuple val(prefix), val(constant)
 
     output:
-    path(outputfile)
+    path(outputfile), emit: "txt"
 
     exec:
-    outputfile = new File("${task.workDir}/${prefix}.exec_foo.txt")
+    outputfile = task.workDir.resolve("${prefix}.exec_foo.txt")
     outputfile.write(prefix)
 }
 
