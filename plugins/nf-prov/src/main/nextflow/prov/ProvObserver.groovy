@@ -38,7 +38,7 @@ import nextflow.trace.TraceRecord
 @CompileStatic
 class ProvObserver implements TraceObserver {
 
-    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy']
+    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy', 'wrroc']
 
     private Session session
 
@@ -66,6 +66,9 @@ class ProvObserver implements TraceObserver {
 
         if( name == 'legacy' )
             return new LegacyRenderer(opts)
+
+        if( name == 'wrroc' )
+            return new WrrocRenderer(opts)
 
         throw new IllegalArgumentException("Invalid provenance format -- valid formats are ${VALID_FORMATS.join(', ')}")
     }
