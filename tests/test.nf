@@ -4,7 +4,7 @@ params.constant = "foo"
 
 process RNG {
 
-    publishDir "results", mode: 'copy'
+    publishDir params.outdir, mode: 'copy'
 
     input:
     tuple val(prefix), val(constant)

@@ -173,9 +173,7 @@ class WrrocRenderer implements Renderer {
                     "agent": ["@id" : agent.get("@id").toString()],
                     // TODO: Add input file references.
                     //"object": task.getInputFilesMap() ???
-                    "result": [
-                        resultFileIDs.collect( file -> ["@id": file] )
-                    ],
+                    "result": resultFileIDs.collect( file -> ["@id": file] ),
                     "actionStatus": task.getExitStatus()==0 ? "CompletedActionStatus" : "FailedActionStatus"
                 ]
 
@@ -210,7 +208,7 @@ class WrrocRenderer implements Renderer {
 
         final controlActions = nextflowProcesses
             .collect() { process -> [
-                "@id": UUID.randomUUID(),
+                "@id": "#" + UUID.randomUUID(),
                 "@type": "ControlAction",
                 "instrument":  ["@id": "${metadata.projectName}#main/${process.getName()}"],
                 "name": "orchestrate " + "${metadata.projectName}#main/${process.getName()}",
@@ -327,7 +325,7 @@ class WrrocRenderer implements Renderer {
                     "endTime": dateCompleted
                 ],
                 [
-                    "id": "#${session.uniqueId}",
+                    "@id": "#${session.uniqueId}",
                     "@type": "CreateAction",
                     "agent":  ["@id" : agent.get("@id").toString()],
                     "name": "Nextflow workflow run ${session.uniqueId}",
