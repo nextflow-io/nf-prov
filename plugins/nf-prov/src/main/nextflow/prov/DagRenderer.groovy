@@ -41,7 +41,7 @@ class DagRenderer implements Renderer {
     private PathNormalizer normalizer
 
     DagRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)

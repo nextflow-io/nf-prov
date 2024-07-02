@@ -43,7 +43,7 @@ class BcoRenderer implements Renderer {
     private PathNormalizer normalizer
 
     BcoRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)
