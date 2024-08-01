@@ -56,6 +56,7 @@ class WrrocRenderer implements Renderer {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
+        final configFilesList = session.getConfigFiles()
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -69,7 +70,7 @@ class WrrocRenderer implements Renderer {
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = nextflowMeta.version.toString()
-        final params = session.config.params as Map
+        final params = session.getBinding().getParams() as Map
         final wrrocParams = session.config.prov["formats"]["wrroc"] as Map
 
         // get RO-Crate Root
@@ -78,10 +79,23 @@ class WrrocRenderer implements Renderer {
         // Copy workflow into crate directory
         Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
 
+        // Copy configuration files into crate directory
+        Path crateConfigDir = Path.of(crateRootDir.toString(), "configuration")
+        if (Files.notExists(crateConfigDir))
+            Files.createDirectory(crateConfigDir)
+
+        // Copy nextflow_schema_json into crate if it exists
+        final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
+        if (Files.exists(schemaFile))
+            Files.copy(schemaFile, crateRootDir.resolve(schemaFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
+        // TODO Add to crate metadata
+
         // create manifest
         final softwareApplicationId = UUID.randomUUID()
         final organizeActionId = UUID.randomUUID()
 
+        // Process wrroc configuration options
+        // agent information
         final LinkedHashMap agent = new LinkedHashMap()
         if (wrrocParams.containsKey("agent")) {
             Map agentMap = wrrocParams["agent"] as Map
@@ -96,14 +110,25 @@ class WrrocRenderer implements Renderer {
             }
         }
 
+        // license information
+        boolean licenseURLvalid = false
+        String licenseString = wrrocParams["license"].toString()
+        URI licenseURL;
+        if (wrrocParams.containsKey("license")) {
+            try {
+                licenseURL = new URL(licenseString).toURI();
+                licenseURLvalid = true
+            } catch (MalformedURLException e) {
+            } catch (URISyntaxException e) {
+            }
+        }
+
         final formalParameters = params
-            .toConfigObject()
-            .flatten()
             .collect { name, value -> [
                 "@id": "#${name}",
                 "@type": "FormalParameter",
                 // TODO: infer type from value at runtime
-                // "additionalType": "File",
+                "additionalType": "String",
                 // "defaultValue": "",
                 "conformsTo": ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
                 "description": "",
@@ -115,9 +140,21 @@ class WrrocRenderer implements Renderer {
                 // "valueRequired": "True"
             ] }
 
+        /*
+        final configFiles = configFilesList
+                .collect { configFile -> [
+                        "@id": source.toString(), //normalizePath(source),
+                        "@type": "File",
+                        "description": "",
+                        "encodingFormat": Files.probeContentType(source) ?: "",
+                        // TODO: apply if matching param is found
+                        // "exampleOfWork": ["@id": paramId]
+                ] }
+         */
+
         final inputFiles = workflowInputs
             .collect { source -> [
-                "@id": normalizePath(source),
+                "@id": source.toString(), //normalizePath(source),
                 "@type": "File",
                 "description": "",
                 "encodingFormat": Files.probeContentType(source) ?: "",
@@ -126,12 +163,11 @@ class WrrocRenderer implements Renderer {
             ] }
 
         // TODO: create PropertyValue for each non-file FormalParameter output
-        final propertyValues = [:]
+        final propertyValues = params
             .collect { name, value -> [
-                "@id": "#${name}",
+                "@id": "#${name}-pv",
                 "@type": "PropertyValue",
-                // TODO: match to param
-                // "exampleOfWork": ["@id": "#verbose-param"],
+                "exampleOfWork": ["@id": "#${name}"],
                 "name": name,
                 "value": value
             ] }
@@ -153,6 +189,7 @@ class WrrocRenderer implements Renderer {
         def createActions = tasks
             .collect { task ->
                 List<String> resultFileIDs = []
+                List<String> objectFileIDs = []
                 for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
                     for (taskOutputFile in taskOutputParam.getValue()) {
                         resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(Path.of(taskOutputFile.toString()))).toString())
@@ -251,6 +288,8 @@ class WrrocRenderer implements Renderer {
                         ["@id": "#${session.uniqueId}"],
                         *createActions.collect( createAction -> ["@id": createAction["@id"]] )
                     ],
+                    // TODO: license:
+                    "license": licenseURLvalid ? [ "@id": licenseURL.toString() ] : licenseString
                 ],
                 [
                     "@id": "https://w3id.org/ro/wfrun/process/0.1",
@@ -334,7 +373,7 @@ class WrrocRenderer implements Renderer {
                     "instrument": ["@id": metadata.projectName],
                     "object": [
                         *inputFiles.collect( file -> ["@id": file["@id"]] ),
-                        *propertyValues.collect( pv -> ["@id", pv["@id"]] )
+                        *propertyValues.collect( pv -> ["@id": pv["@id"]] )
                     ],
                     "result": outputFiles.collect( file ->
                         ["@id": file["@id"]]
@@ -343,6 +382,7 @@ class WrrocRenderer implements Renderer {
                 *[agent],
                 *controlActions,
                 *createActions,
+                //*configFiles,
                 *inputFiles,
                 *propertyValues,
                 *outputFiles
