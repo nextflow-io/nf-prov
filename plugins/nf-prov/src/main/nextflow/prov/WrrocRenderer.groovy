@@ -16,20 +16,23 @@
 
 package nextflow.prov
 
+import nextflow.script.params.FileOutParam
+
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.time.format.DateTimeFormatter
 
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
-import nextflow.exception.AbortOperationException
 import nextflow.processor.TaskRun
 
 /**
  * Renderer for the Provenance Run RO Crate format.
  *
  * @author Ben Sherman <bentshermann@gmail.com>
+ * @author Felix Bartusch <felix.bartusch@uni-tuebingen.de>
  */
 @CompileStatic
 class WrrocRenderer implements Renderer {
@@ -53,6 +56,7 @@ class WrrocRenderer implements Renderer {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
+        final configFilesList = session.getConfigFiles()
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -60,34 +64,71 @@ class WrrocRenderer implements Renderer {
 
         final manifest = metadata.manifest
         final nextflowMeta = metadata.nextflow
+        final scriptFile = metadata.getScriptFile()
 
         final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = nextflowMeta.version.toString()
-        final params = session.config.params as Map
+        final params = session.getBinding().getParams() as Map
+        final wrrocParams = session.config.prov["formats"]["wrroc"] as Map
+
+        // get RO-Crate Root
+        final crateRootDir = Path.of(params['outdir'].toString()).toAbsolutePath()
+
+        // Copy workflow into crate directory
+        Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
+
+        // Copy configuration files into crate directory
+        Path crateConfigDir = Path.of(crateRootDir.toString(), "configuration")
+        if (Files.notExists(crateConfigDir))
+            Files.createDirectory(crateConfigDir)
+
+        // Copy nextflow_schema_json into crate if it exists
+        final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
+        if (Files.exists(schemaFile))
+            Files.copy(schemaFile, crateRootDir.resolve(schemaFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
+        // TODO Add to crate metadata
 
         // create manifest
         final softwareApplicationId = UUID.randomUUID()
         final organizeActionId = UUID.randomUUID()
 
-        final authors = (manifest.author ?: '')
-            .tokenize(',')
-            .withIndex()
-            .collect { String name, int i -> [
-                "@id": "author-${i + 1}",
-                "@type": "Person",
-                "name": name.trim()
-            ] }
+        // Process wrroc configuration options
+        // agent information
+        final LinkedHashMap agent = new LinkedHashMap()
+        if (wrrocParams.containsKey("agent")) {
+            Map agentMap = wrrocParams["agent"] as Map
+            if(agentMap.containsKey("orcid")) {
+                agent.put("@id", agentMap.get("orcid"))
+            } else {
+                agent.put("@id", "agent-1")
+            }
+            agent.put("@type", "Person")
+            if(agentMap.containsKey("name")) {
+                agent.put("name", agentMap.get("name"))
+            }
+        }
+
+        // license information
+        boolean licenseURLvalid = false
+        String licenseString = wrrocParams["license"].toString()
+        URI licenseURL;
+        if (wrrocParams.containsKey("license")) {
+            try {
+                licenseURL = new URL(licenseString).toURI();
+                licenseURLvalid = true
+            } catch (MalformedURLException e) {
+            } catch (URISyntaxException e) {
+            }
+        }
 
         final formalParameters = params
-            .toConfigObject()
-            .flatten()
             .collect { name, value -> [
                 "@id": "#${name}",
                 "@type": "FormalParameter",
                 // TODO: infer type from value at runtime
-                // "additionalType": "File",
+                "additionalType": "String",
                 // "defaultValue": "",
                 "conformsTo": ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
                 "description": "",
@@ -99,9 +140,21 @@ class WrrocRenderer implements Renderer {
                 // "valueRequired": "True"
             ] }
 
+        /*
+        final configFiles = configFilesList
+                .collect { configFile -> [
+                        "@id": source.toString(), //normalizePath(source),
+                        "@type": "File",
+                        "description": "",
+                        "encodingFormat": Files.probeContentType(source) ?: "",
+                        // TODO: apply if matching param is found
+                        // "exampleOfWork": ["@id": paramId]
+                ] }
+         */
+
         final inputFiles = workflowInputs
             .collect { source -> [
-                "@id": normalizePath(source),
+                "@id": source.toString(), //normalizePath(source),
                 "@type": "File",
                 "description": "",
                 "encodingFormat": Files.probeContentType(source) ?: "",
@@ -110,29 +163,100 @@ class WrrocRenderer implements Renderer {
             ] }
 
         // TODO: create PropertyValue for each non-file FormalParameter output
-        final propertyValues = [:]
+        final propertyValues = params
             .collect { name, value -> [
-                "@id": "#${name}",
+                "@id": "#${name}-pv",
                 "@type": "PropertyValue",
-                // TODO: match to param
-                // "exampleOfWork": ["@id": "#verbose-param"],
+                "exampleOfWork": ["@id": "#${name}"],
                 "name": name,
                 "value": value
             ] }
 
         final outputFiles = workflowOutputs
             .collect { source, target -> [
-                "@id": normalizePath(source),
+                "@id": crateRootDir.relativize(target).toString(),
                 "@type": "File",
-                "name": source.name,
+                "name": target.name,
                 "description": "",
-                "encodingFormat": Files.probeContentType(source) ?: "",
+                "encodingFormat": Files.probeContentType(target) ?: "",
                 // TODO: create FormalParameter for each output file?
                 // "exampleOfWork": {"@id": "#reversed"}
             ] }
 
+        // Maps used for finding tasks/CreateActions corresponding to a Nextflow process
+        Map <String, List> processToTasks = [:].withDefault { [] }
+
+        def createActions = tasks
+            .collect { task ->
+                List<String> resultFileIDs = []
+                List<String> objectFileIDs = []
+                for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
+                    for (taskOutputFile in taskOutputParam.getValue()) {
+                        resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(Path.of(taskOutputFile.toString()))).toString())
+                    }
+                }
+
+                def createAction = [
+                    "@id": "#" + task.getHash().toString(),
+                    "@type": "CreateAction",
+                    "name": task.getName(),
+                    // TODO: There is no description for Nextflow processes?
+                    //"description" : "",
+                    // TODO: task doesn't contain startTime information. TaskHandler does, but is not available to WrrocRenderer
+                    //"startTime": "".
+                    // TODO: Same as for startTime
+                    //"endTime": "",
+                    "instrument": ["@id": "#" + task.getProcessor().ownerScript.toString()],
+                    "agent": ["@id" : agent.get("@id").toString()],
+                    // TODO: Add input file references.
+                    //"object": task.getInputFilesMap() ???
+                    "result": resultFileIDs.collect( file -> ["@id": file] ),
+                    "actionStatus": task.getExitStatus()==0 ? "CompletedActionStatus" : "FailedActionStatus"
+                ]
+
+                // Add error message if there is one
+                if (task.getExitStatus()!=0) {
+                    createAction.put("error", task.getStderr())
+                }
+
+                return createAction
+            }
+
+        final nextflowProcesses = tasks
+            .collect { task ->
+                processToTasks[task.getProcessor().getId().toString()].add("#${task.getHash().toString()}")
+                return task.getProcessor()
+            }.unique()
+
+        final wfSofwareApplications = nextflowProcesses
+            .collect() { process -> [
+                "@id": "#" + process.ownerScript.toString(),
+                "@type": "SoftwareApplication",
+                "name": process.getName()
+            ] }
+
+        final howToSteps = nextflowProcesses
+            .collect() { process -> [
+                "@id": metadata.projectName + "#main/" + process.getName(),
+                "@type": "HowToStep",
+                "workExample":  ["@id": "#" + process.ownerScript.toString()],
+                "position": process.getId()
+            ] }
+
+        final controlActions = nextflowProcesses
+            .collect() { process -> [
+                "@id": "#" + UUID.randomUUID(),
+                "@type": "ControlAction",
+                "instrument":  ["@id": "${metadata.projectName}#main/${process.getName()}"],
+                "name": "orchestrate " + "${metadata.projectName}#main/${process.getName()}",
+                "object": processToTasks[process.getId().toString()].collect( { taskID ->
+                    ["@id": taskID]
+                } )
+                // TODO: add actionStatus and error? But it's already implemented for createAction.
+            ] }
+
         final wrroc = [
-            "@context": "https://w3id.org/ro/crate/1.1/context", 
+            "@context": "https://w3id.org/ro/crate/1.1/context",
             "@graph": [
                 [
                     "@id": path.name,
@@ -160,7 +284,12 @@ class WrrocRenderer implements Renderer {
                         *outputFiles.collect( file -> ["@id": file["@id"]] )
                     ],
                     "mainEntity": ["@id": metadata.projectName],
-                    "mentions": ["@id": "#${session.uniqueId}"]
+                    "mentions": [
+                        ["@id": "#${session.uniqueId}"],
+                        *createActions.collect( createAction -> ["@id": createAction["@id"]] )
+                    ],
+                    // TODO: license:
+                    "license": licenseURLvalid ? [ "@id": licenseURL.toString() ] : licenseString
                 ],
                 [
                     "@id": "https://w3id.org/ro/wfrun/process/0.1",
@@ -191,18 +320,18 @@ class WrrocRenderer implements Renderer {
                     "@type": ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
                     "name": metadata.projectName,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
-                    "hasPart": [
-                        // TODO: module files? processes?
-                    ],
+                    "hasPart": wfSofwareApplications.collect( sa ->
+                        ["@id": sa["@id"]]
+                    ),
                     "input": formalParameters.collect( fp ->
                         ["@id": fp["@id"]]
                     ),
                     "output": [
                         // TODO: id of FormalParameter for each output file
                     ],
-                    "step": [
-                        // TODO: processes?
-                    ]
+                    "step": howToSteps.collect( step ->
+                        ["@id": step["@id"]]
+                    ),
                 ],
                 [
                     "@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow",
@@ -212,42 +341,48 @@ class WrrocRenderer implements Renderer {
                     "url": "https://www.nextflow.io/",
                     "version": nextflowVersion
                 ],
-                // TODO: SoftwareApplication for each process w/ formal parameters
+                *wfSofwareApplications,
                 *formalParameters,
                 [
                     "@id": "#${softwareApplicationId}",
                     "@type": "SoftwareApplication",
                     "name": "Nextflow ${nextflowVersion}"
                 ],
+
+                *howToSteps,
                 [
                     "@id": "#${organizeActionId}",
                     "@type": "OrganizeAction",
-                    "agent": authors ? ["@id": "author-1"] : null,
+                    "agent":  ["@id" : agent.get("@id").toString()],
                     "instrument": ["@id": "#${softwareApplicationId}"],
                     "name": "Run of Nextflow ${nextflowVersion}",
                     "object": [
-                        ["@id": "#4f7f887f-1b9b-4417-9beb-58618a125cc5"],
-                        ["@id": "#793b3df4-cbb7-4d17-94d4-0edb18566ed3"]
+                        *controlActions.collect( action -> ["@id": action["@id"]] )
                     ],
                     "result": ["@id": "#${session.uniqueId}"],
-                    "startTime": dateStarted
+                    "startTime": dateStarted,
+                    "endTime": dateCompleted
                 ],
-                *authors,
                 [
                     "@id": "#${session.uniqueId}",
                     "@type": "CreateAction",
+                    "agent":  ["@id" : agent.get("@id").toString()],
                     "name": "Nextflow workflow run ${session.uniqueId}",
                     "startTime": dateStarted,
                     "endTime": dateCompleted,
                     "instrument": ["@id": metadata.projectName],
                     "object": [
                         *inputFiles.collect( file -> ["@id": file["@id"]] ),
-                        *propertyValues.collect( pv -> ["@id", pv["@id"]] )
+                        *propertyValues.collect( pv -> ["@id": pv["@id"]] )
                     ],
                     "result": outputFiles.collect( file ->
                         ["@id": file["@id"]]
                     )
                 ],
+                *[agent],
+                *controlActions,
+                *createActions,
+                //*configFiles,
                 *inputFiles,
                 *propertyValues,
                 *outputFiles
