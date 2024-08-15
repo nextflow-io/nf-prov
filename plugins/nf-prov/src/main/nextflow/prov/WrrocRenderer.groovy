@@ -16,6 +16,7 @@
 
 package nextflow.prov
 
+import nextflow.config.ConfigMap
 import nextflow.script.params.FileOutParam
 
 import java.nio.file.Files
@@ -53,10 +54,21 @@ class WrrocRenderer implements Renderer {
 
     @Override
     void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
+
+        final params = session.getBinding().getParams() as Map
+        final configMap = new ConfigMap(session.getConfig())
+
+        // get RO-Crate Root
+        final crateRootDir = Path.of(params['outdir'].toString()).toAbsolutePath()
+
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
-        final configFilesList = session.getConfigFiles()
+
+        // get workflow config and store it in crate
+        Path configFilePath = crateRootDir.resolve("nextflow.config")
+        FileWriter configFileWriter = new FileWriter(configFilePath.toString())
+        configMap.toConfigObject().writeTo(configFileWriter)
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -70,19 +82,12 @@ class WrrocRenderer implements Renderer {
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = nextflowMeta.version.toString()
-        final params = session.getBinding().getParams() as Map
         final wrrocParams = session.config.prov["formats"]["wrroc"] as Map
 
-        // get RO-Crate Root
-        final crateRootDir = Path.of(params['outdir'].toString()).toAbsolutePath()
+
 
         // Copy workflow into crate directory
         Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
-
-        // Copy configuration files into crate directory
-        Path crateConfigDir = Path.of(crateRootDir.toString(), "configuration")
-        if (Files.notExists(crateConfigDir))
-            Files.createDirectory(crateConfigDir)
 
         // Copy nextflow_schema_json into crate if it exists
         final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
@@ -139,18 +144,6 @@ class WrrocRenderer implements Renderer {
                 "name": name,
                 // "valueRequired": "True"
             ] }
-
-        /*
-        final configFiles = configFilesList
-                .collect { configFile -> [
-                        "@id": source.toString(), //normalizePath(source),
-                        "@type": "File",
-                        "description": "",
-                        "encodingFormat": Files.probeContentType(source) ?: "",
-                        // TODO: apply if matching param is found
-                        // "exampleOfWork": ["@id": paramId]
-                ] }
-         */
 
         final inputFiles = workflowInputs
             .collect { source -> [
@@ -255,6 +248,14 @@ class WrrocRenderer implements Renderer {
                 // TODO: add actionStatus and error? But it's already implemented for createAction.
             ] }
 
+        final configFile =
+            [
+                "@id": "nextflow.config",
+                "@type": "File",
+                "name": "Effective Nextflow configuration",
+                "description": "This is the effective configuration during runtime compiled from all configuration sources. "
+            ]
+
         final wrroc = [
             "@context": "https://w3id.org/ro/crate/1.1/context",
             "@graph": [
@@ -357,7 +358,8 @@ class WrrocRenderer implements Renderer {
                     "instrument": ["@id": "#${softwareApplicationId}"],
                     "name": "Run of Nextflow ${nextflowVersion}",
                     "object": [
-                        *controlActions.collect( action -> ["@id": action["@id"]] )
+                        *controlActions.collect( action -> ["@id": action["@id"]] ),
+                        ["@id": "nextflow.config"]
                     ],
                     "result": ["@id": "#${session.uniqueId}"],
                     "startTime": dateStarted,
@@ -382,7 +384,7 @@ class WrrocRenderer implements Renderer {
                 *[agent],
                 *controlActions,
                 *createActions,
-                //*configFiles,
+                configFile,
                 *inputFiles,
                 *propertyValues,
                 *outputFiles
