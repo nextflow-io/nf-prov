@@ -67,6 +67,15 @@ class BcoRenderer implements Renderer {
         final nextflowVersion = nextflowMeta.version.toString()
         final params = session.config.params as Map
 
+        final config = session.config
+        final review            = config.navigate('prov.formats.bco.provenance_domain.review', []) as List<Map<String,?>>
+        final derived_from      = config.navigate('prov.formats.bco.provenance_domain.derived_from') as String
+        final obsolete_after    = config.navigate('prov.formats.bco.provenance_domain.obsolete_after') as String
+        final embargo           = config.navigate('prov.formats.bco.provenance_domain.embargo') as Map<String,String>
+        final usability         = config.navigate('prov.formats.bco.usability_domain', []) as List<String>
+        final keywords          = config.navigate('prov.formats.bco.description_domain.keywords', []) as List<String>
+        final xref              = config.navigate('prov.formats.bco.description_domain.xref', []) as List<Map<String,?>>
+
         // create BCO manifest
         final bco = [
             "object_id": null,
@@ -75,6 +84,9 @@ class BcoRenderer implements Renderer {
             "provenance_domain": [
                 "name": manifest.name ?: "",
                 "version": manifest.version ?: "",
+                "review": review,
+                "obsolete_after": obsolete_after,
+                "embargo": embargo,
                 "created": dateCreated,
                 "modified": dateCreated,
                 "contributors": authors.collect( name -> [
@@ -83,10 +95,11 @@ class BcoRenderer implements Renderer {
                 ] ),
                 "license": ""
             ],
-            "usability_domain": [],
+            "usability_domain": usability,
             "extension_domain": [],
             "description_domain": [
-                "keywords": [],
+                "keywords": keywords,
+                "xref": xref,
                 "platform": ["Nextflow"],
                 "pipeline_steps": tasks.sort( (task) -> task.id ).collect { task -> [
                     "step_number": task.id,
