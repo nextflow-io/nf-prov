@@ -17,6 +17,8 @@
 package nextflow.prov
 
 import nextflow.config.ConfigMap
+import nextflow.file.FileHolder
+import nextflow.script.params.FileInParam
 import nextflow.script.params.FileOutParam
 
 import java.nio.file.Files
@@ -84,8 +86,6 @@ class WrrocRenderer implements Renderer {
         final nextflowVersion = nextflowMeta.version.toString()
         final wrrocParams = session.config.prov["formats"]["wrroc"] as Map
 
-
-
         // Copy workflow into crate directory
         Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
 
@@ -117,14 +117,22 @@ class WrrocRenderer implements Renderer {
 
         // license information
         boolean licenseURLvalid = false
-        String licenseString = wrrocParams["license"].toString()
-        URI licenseURL;
+        String licenseString = null;
+        URI licenseURL = null
+        Map license = null
         if (wrrocParams.containsKey("license")) {
+            licenseString = wrrocParams.get("license")
             try {
                 licenseURL = new URL(licenseString).toURI();
                 licenseURLvalid = true
-            } catch (MalformedURLException e) {
-            } catch (URISyntaxException e) {
+
+                // Entity for license URL
+                license = [
+                    "@id"  : licenseURL.toString(),
+                    "@type": "CreativeWork"
+                ]
+            } catch (Exception e) {
+                licenseURLvalid = false
             }
         }
 
@@ -145,6 +153,7 @@ class WrrocRenderer implements Renderer {
                 // "valueRequired": "True"
             ] }
 
+        //TODO Copy input files to crate directory
         final inputFiles = workflowInputs
             .collect { source -> [
                 "@id": source.toString(), //normalizePath(source),
@@ -181,11 +190,35 @@ class WrrocRenderer implements Renderer {
 
         def createActions = tasks
             .collect { task ->
+
                 List<String> resultFileIDs = []
-                List<String> objectFileIDs = []
                 for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
                     for (taskOutputFile in taskOutputParam.getValue()) {
-                        resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(Path.of(taskOutputFile.toString()))).toString())
+                        // Path to file in workdir
+                        Path taskOutputFilePath = Path.of(taskOutputFile.toString())
+
+                        // Don't care about files that aren't published (e.g. aren't contained in workflowOutputs map)
+                        if (workflowOutputs.containsKey(taskOutputFilePath)) {
+                            resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(taskOutputFilePath)).toString())
+                        } else {
+                            // TODO Copy file from workdir into crate?
+                            System.out.println("taskOutput not contained in workflow output: " + taskOutputFilePath)
+                        }
+                    }
+                }
+
+                List<String> objectFileIDs = []
+                for (taskInputParam in task.getInputsByType(FileInParam)) {
+                    for (taskInputFileHolder in taskInputParam.getValue()) {
+                        FileHolder holder = (FileHolder) taskInputFileHolder
+                        Path taskInputFilePath = holder.getStorePath()
+
+                        if (workflowInputs.contains(taskInputFilePath)) {
+                            objectFileIDs.add(taskInputFilePath.toString())
+                        } else {
+                            // TODO Copy file from workdir into crate?
+                            System.out.println("taskInput not contained in workflow inputs: " + taskInputFilePath)
+                        }
                     }
                 }
 
@@ -202,7 +235,7 @@ class WrrocRenderer implements Renderer {
                     "instrument": ["@id": "#" + task.getProcessor().ownerScript.toString()],
                     "agent": ["@id" : agent.get("@id").toString()],
                     // TODO: Add input file references.
-                    //"object": task.getInputFilesMap() ???
+                    "object": objectFileIDs.collect( file -> ["@id": file] ),
                     "result": resultFileIDs.collect( file -> ["@id": file] ),
                     "actionStatus": task.getExitStatus()==0 ? "CompletedActionStatus" : "FailedActionStatus"
                 ]
@@ -387,8 +420,9 @@ class WrrocRenderer implements Renderer {
                 configFile,
                 *inputFiles,
                 *propertyValues,
-                *outputFiles
-            ]
+                *outputFiles,
+                license
+            ].findAll { it != null }
         ]
 
         // render manifest to JSON file
