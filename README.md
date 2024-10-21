@@ -44,7 +44,7 @@ Configuration scope for the desired output formats. The following formats are av
 
 - `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
 
-  Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.
+  *New in version 1.3.0*: additional "pass-through" options are available for BCO fields that can't be inferred from the pipeline. See [BCO.md](./BCO.md) for more information.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
