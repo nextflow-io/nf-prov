@@ -23,6 +23,7 @@ import java.time.format.DateTimeFormatter
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
+import nextflow.SysEnv
 import nextflow.processor.TaskRun
 import nextflow.script.WorkflowMetadata
 import nextflow.util.CacheHelper
@@ -68,13 +69,15 @@ class BcoRenderer implements Renderer {
         final params = session.config.params as Map
 
         final config = session.config
-        final review            = config.navigate('prov.formats.bco.provenance_domain.review', []) as List<Map<String,?>>
-        final derived_from      = config.navigate('prov.formats.bco.provenance_domain.derived_from') as String
-        final obsolete_after    = config.navigate('prov.formats.bco.provenance_domain.obsolete_after') as String
-        final embargo           = config.navigate('prov.formats.bco.provenance_domain.embargo') as Map<String,String>
-        final usability         = config.navigate('prov.formats.bco.usability_domain', []) as List<String>
-        final keywords          = config.navigate('prov.formats.bco.description_domain.keywords', []) as List<String>
-        final xref              = config.navigate('prov.formats.bco.description_domain.xref', []) as List<Map<String,?>>
+        final review                  = config.navigate('prov.formats.bco.provenance_domain.review', []) as List<Map<String,?>>
+        final derived_from            = config.navigate('prov.formats.bco.provenance_domain.derived_from') as String
+        final obsolete_after          = config.navigate('prov.formats.bco.provenance_domain.obsolete_after') as String
+        final embargo                 = config.navigate('prov.formats.bco.provenance_domain.embargo') as Map<String,String>
+        final usability               = config.navigate('prov.formats.bco.usability_domain', []) as List<String>
+        final keywords                = config.navigate('prov.formats.bco.description_domain.keywords', []) as List<String>
+        final xref                    = config.navigate('prov.formats.bco.description_domain.xref', []) as List<Map<String,?>>
+        final external_data_endpoints = config.navigate('prov.formats.bco.execution_domain.external_data_endpoints', []) as List<Map<String,String>>
+        final environment_variables   = config.navigate('prov.formats.bco.execution_domain.environment_variables', []) as List<String>
 
         // create BCO manifest
         final bco = [
@@ -125,8 +128,12 @@ class BcoRenderer implements Renderer {
                         ]
                     ]
                 ],
-                "external_data_endpoints": [],
-                "environment_variables": [:]
+                "external_data_endpoints": external_data_endpoints,
+                "environment_variables": environment_variables.inject([:]) { acc, name ->
+                    if( SysEnv.containsKey(name) )
+                        acc.put(name, SysEnv.get(name))
+                    acc
+                }
             ],
             "parametric_domain": params.toConfigObject().flatten().collect( (k, v) -> [
                 "param": k,

@@ -1,5 +1,7 @@
 # Additional BCO configuration
 
+*New in version 1.3.0*
+
 The `bco` format supports additional "pass-through" options for certain BCO fields. These fields cannot be inferred automatically from a pipeline or run, and so must be entered through the config. External systems can use these config options to inject fields automatically.
 
 The following config options are supported:
@@ -11,8 +13,12 @@ The following config options are supported:
 - `prov.formats.bco.usability_domain`
 - `prov.formats.bco.description_domain.keywords`
 - `prov.formats.bco.description_domain.xref`
+- `prov.formats.bco.execution_domain.external_data_endpoints`
+- `prov.formats.bco.execution_domain.environment_variables`
 
 These options correspond exactly to fields in the BCO JSON schema. Refer to the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) for more information about these fields.
+
+*NOTE: The `environment_variables` setting differs from the BCO standard in that it only specifies the variable names. Only the variables specified in this list will be populated in the BCO, if they are present in the execution environment.*
 
 Here is an example config based on the BCO User Guide:
 
@@ -94,6 +100,23 @@ prov {
           ]
         ]
       }
+      execution_domain {
+        external_data_endpoints = [
+          [
+            "url": "protocol://domain:port/application/path",
+            "name": "generic name"
+          ],
+          [
+            "url": "ftp://data.example.com:21/",
+            "name": "access to ftp server"
+          ],
+          [
+            "url": "http://eutils.ncbi.nlm.nih.gov/entrez/eutils",
+            "name": "access to e-utils web service"
+          ]
+        ]
+        environment_variables = ["HOSTTYPE", "EDITOR"]
+      }
     }
   }
 }
@@ -115,6 +138,10 @@ prov {
       description_domain {
         keywords = params.bco_description_domain_keywords
         xref = params.bco_description_domain_xref
+      }
+      execution_domain {
+        external_data_endpoints = params.bco_execution_domain_external_data_endpoints
+        environment_variables = params.bco_execution_domain_environment_variables
       }
     }
   }
@@ -141,6 +168,12 @@ This way, the pass-through options can be provided as JSON in a [params file](ht
         // ...
     ],
     "bco_description_domain_xref": [
+        // ...
+    ],
+    "bco_execution_domain_external_data_endpoints": [
+        // ...
+    ],
+    "bco_execution_domain_environment_variables": [
         // ...
     ]
 }
