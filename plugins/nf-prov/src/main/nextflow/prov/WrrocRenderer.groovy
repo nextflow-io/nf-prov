@@ -367,7 +367,7 @@ class WrrocRenderer implements Renderer {
                     "@id"        : metadata.projectName + "#main/" + process.getName(),
                     "@type"      : "HowToStep",
                     "workExample": ["@id": "#" + process.ownerScript.toString()],
-                    "position"   : process.getId()
+                    "position"   : process.getId().toString()
                 ]
             }
 
@@ -407,6 +407,9 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"        : "./",
                     "@type"      : "Dataset",
+                    "author"     : ["@id": agent.get("@id").toString()],
+                    //TODO Add publisher
+                    //"publisher"  : "",
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
                         ["@id": "https://w3id.org/ro/wfrun/process/0.1"],
@@ -494,8 +497,7 @@ class WrrocRenderer implements Renderer {
                     "instrument": ["@id": "#${softwareApplicationId}"],
                     "name"      : "Run of Nextflow ${nextflowVersion}",
                     "object"    : [
-                        *controlActions.collect(action -> ["@id": action["@id"]]),
-                        ["@id": "nextflow.config"]
+                        *controlActions.collect(action -> ["@id": action["@id"]])
                     ],
                     "result"    : ["@id": "#${session.uniqueId}"],
                     "startTime" : dateStarted,
