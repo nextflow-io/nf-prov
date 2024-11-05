@@ -24,9 +24,12 @@ import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.SysEnv
+import nextflow.config.Manifest
 import nextflow.processor.TaskRun
 import nextflow.script.WorkflowMetadata
 import nextflow.util.CacheHelper
+
+import static nextflow.config.Manifest.ContributionType
 
 /**
  * Renderer for the BioCompute Object (BCO) format.
@@ -64,7 +67,7 @@ class BcoRenderer implements Renderer {
         final nextflowMeta = metadata.nextflow
 
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
-        final authors = (manifest.author ?: '').tokenize(',')*.trim()
+        final contributors = getContributors(manifest)
         final nextflowVersion = nextflowMeta.version.toString()
         final params = session.config.params as Map
 
@@ -88,15 +91,13 @@ class BcoRenderer implements Renderer {
                 "name": manifest.name ?: "",
                 "version": manifest.version ?: "",
                 "review": review,
+                "derived_from": derived_from,
                 "obsolete_after": obsolete_after,
                 "embargo": embargo,
                 "created": dateCreated,
                 "modified": dateCreated,
-                "contributors": authors.collect( name -> [
-                    "contribution": ["authoredBy"],
-                    "name": name
-                ] ),
-                "license": ""
+                "contributors": contributors,
+                "license": manifest.license
             ],
             "usability_domain": usability,
             "extension_domain": [],
@@ -190,5 +191,21 @@ class BcoRenderer implements Renderer {
         // render BCO manifest to JSON file
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
     }
+
+    private List getContributors(Manifest manifest) {
+        manifest.contributors.collect { c -> [
+            "name": c.name,
+            "affiliation": c.affiliation,
+            "email": c.email,
+            "contribution": c.contribution.collect { ct -> CONTRIBUTION_TYPES[ct] },
+            "orcid": c.orcid
+        ] }
+    }
+
+    private static Map<ContributionType, String> CONTRIBUTION_TYPES = [
+        (ContributionType.AUTHOR) : "authoredBy",
+        (ContributionType.MAINTAINER) : "curatedBy",
+        (ContributionType.CONTRIBUTOR) : "curatedBy",
+    ]
 
 }
