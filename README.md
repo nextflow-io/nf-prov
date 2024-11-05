@@ -6,6 +6,8 @@ Nextflow plugin to render provenance reports for pipeline runs. Now supporting [
 
 The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
 
+*New in version 1.3.0: requires Nextflow 24.10.0 or later.*
+
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
 ```groovy
