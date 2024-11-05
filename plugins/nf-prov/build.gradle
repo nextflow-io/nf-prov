@@ -62,7 +62,6 @@ dependencies {
 
     // test configuration
     testImplementation 'io.nextflow:nextflow:24.10.0'
-    testImplementation ("org.codehaus.groovy:groovy-test:4.0.23") { exclude group: 'org.codehaus.groovy' }
     testImplementation ("cglib:cglib-nodep:3.3.0")
     testImplementation ("org.objenesis:objenesis:3.2")
     testImplementation ("org.spockframework:spock-core:2.3-groovy-4.0") { exclude group: 'org.codehaus.groovy'; exclude group: 'net.bytebuddy' }
