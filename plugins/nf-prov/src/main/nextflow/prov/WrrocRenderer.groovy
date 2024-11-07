@@ -390,14 +390,34 @@ class WrrocRenderer implements Renderer {
                 def processorConfig = process.getConfig()
                 def extProperties = processorConfig.ext as Map
                 def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
-                //def toolList = metaYaml.get('tools') ?
+                //def toolList = 
+                // { tool -> println "$tool" }
                 [
                     "@id"  : "#" + process.ownerScript.toString(),
                     "@type": "SoftwareApplication",
                     "name" : process.getName(),
                     "about" : [ "@id": toolNameTask ]
+                    
                 ]
             }
+
+        final multipleTools = nextflowProcesses
+            .collect() { process ->
+                def metaYaml = readMetaYaml(process)
+                def toolList = metaYaml.get('tools').collect() as List
+                return toolList
+            }
+        
+        final perTool = multipleTools.collect { toolList ->
+            //println(toolList)
+            toolList.get(0).collect().each { entry -> 
+                println entry.flatten().getClass()
+                [
+                    "@id" : entry.toString()
+                ]
+                
+            } 
+        }
 
         final aboutSoftware = nextflowProcesses
             .collect () { process ->
@@ -405,12 +425,17 @@ class WrrocRenderer implements Renderer {
                 //def toolNameTask = metaYaml.get('name') ?: ''
                 def processorConfig = process.getConfig()
                 def extProperties = processorConfig.ext as Map
-                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name') as String
                 def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
-                [
-                    "@id": toolNameTask,
-                    "applicationCategory": applicationCategory
-                ]
+                //metaYaml.get('tools').collect(file -> file)
+                def toolList = metaYaml.get('tools').collect() as Map
+                //def toolListSpecific = toolList.flatten() as Map
+                //def toolListSpecificName = toolListSpecific.getAt(toolNameTask).collect()
+                // println(toolList)
+                // def createAboutSoftware = [
+
+                // ]
+                //return createAboutSoftware
             }
 
         final howToSteps = nextflowProcesses
@@ -535,7 +560,8 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 *wfSofwareApplications,
-                *aboutSoftware,
+                //*aboutSoftware,
+                *perTool,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
