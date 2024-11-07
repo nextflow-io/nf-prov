@@ -401,23 +401,41 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final multipleTools = nextflowProcesses
+        final perToolName = nextflowProcesses
             .collect() { process ->
                 def metaYaml = readMetaYaml(process)
-                def toolList = metaYaml.get('tools').collect() as List
-                return toolList
+                //def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                def toolList = metaYaml.get('tools').each { tool ->
+                    //println tool.getClass()
+                    def toolMap = tool as Map
+                    toolMap.each { field -> 
+                        field.value.each {entry -> [//"softwareInfo": entry]
+                        "object"      : entry.collect(file -> ["@id": file]) 
+                        ]
+                            // println(entry)
+                            // println("-------")
+                        }
+                    }
+                    // for (field in toolMap) {
+                    // for (entry in field.value) {
+                    //     println(entry)
+                    //     println("-------")
+                    // }
+                    // }
+                    // toolMap.each { field -> 
+                    // for (entry in field.value) {
+                    //     println(entry)
+                    //     println("-------")
+                    // }
+                    // }
+                }
+                
             }
         
-        final perTool = multipleTools.collect { toolList ->
-            //println(toolList)
-            toolList.get(0).collect().each { entry -> 
-                println entry.flatten().getClass()
-                [
-                    "@id" : entry.toString()
-                ]
-                
-            } 
-        }
+        // final perToolName = perTool
+        //     .collect() { field ->
+        //         //println(field)
+        //     }
 
         final aboutSoftware = nextflowProcesses
             .collect () { process ->
@@ -561,7 +579,7 @@ class WrrocRenderer implements Renderer {
                 ],
                 *wfSofwareApplications,
                 //*aboutSoftware,
-                *perTool,
+                *perToolName,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
@@ -605,7 +623,8 @@ class WrrocRenderer implements Renderer {
                 configFile,
                 *uniqueInputOutputFiles,
                 *propertyValues,
-                license
+                license,
+                *perToolName
             ].findAll { it != null }
         ]
 
@@ -721,6 +740,14 @@ class WrrocRenderer implements Renderer {
                 String content = metaFile.text
                 Yaml yaml = new Yaml()
                 Map result = yaml.load(content) as Map
+                // result.get('tools').each { tool ->
+                //     println tool.getClass()
+                //     def toolMap = tool as Map
+                //     for (field in toolMap) {
+                //     for (entry in field.value) {
+                //         println(entry)
+                //     }
+                //     }}
                 return result
                 }
             }
