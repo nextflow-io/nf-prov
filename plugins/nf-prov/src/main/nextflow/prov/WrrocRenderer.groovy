@@ -340,6 +340,8 @@ class WrrocRenderer implements Renderer {
                 
                 def metaYaml = readMetaYaml(task)
 
+                //metaYaml.map.each { entry -> println(entry))
+
                 def createAction = [
                     "@id"         : "#" + task.getHash().toString(),
                     "@type"       : "CreateAction",
@@ -666,15 +668,9 @@ class WrrocRenderer implements Renderer {
                 Map result = yaml.load(content) as Map
                 return result
                 }
-                }
-            } else {
-                System.err.println("Project directory not found")
             }
-            } else {
-                System.err.println("Project directory not found")
-        }
         return null
-    }
+        }
 
     static String getDatePublished() {
         return LocalDateTime.now().format(DateTimeFormatter.ISO_DATE)
