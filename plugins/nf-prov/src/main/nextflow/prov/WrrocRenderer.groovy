@@ -340,7 +340,16 @@ class WrrocRenderer implements Renderer {
                 
                 def metaYaml = readMetaYaml(task)
 
-                //metaYaml.map.each { entry -> println(entry))
+                //metaYaml.each { entry -> println "$entry" }
+                //print(metaYaml.find{it.key == "output"}.value.collect{it}.get(0))
+                //.find{it.key == "crate"}.value
+                def outputFilesEntries = metaYaml.find{it.key == "output"}.value.collect{it}.get(0) as Map
+                //print(outputFilesEntries.each { entry -> println "$entry" })
+                //print(outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1))
+
+                def outputFilesEntriesPatterns = outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1).collect{it} as Map
+                print(outputFilesEntriesPatterns.each { entry -> println "$entry" })
+                //outputFilesEntries.each { entry -> println "$entry" }
 
                 def createAction = [
                     "@id"         : "#" + task.getHash().toString(),
