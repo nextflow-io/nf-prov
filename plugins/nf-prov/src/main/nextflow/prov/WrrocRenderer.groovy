@@ -36,6 +36,11 @@ import nextflow.processor.TaskProcessor
 import nextflow.script.ScriptBinding.ParamsMap
 import nextflow.script.WorkflowMetadata
 
+import groovy.transform.CompileStatic
+import nextflow.processor.TaskProcessor
+import nextflow.script.WorkflowMetadata
+import org.yaml.snakeyaml.Yaml
+
 /**
  * Renderer for the Provenance Run RO Crate format.
  *
@@ -332,15 +337,15 @@ class WrrocRenderer implements Renderer {
                 def processorConfig = task.getProcessor().getConfig()
                 def extProperties = processorConfig.ext as Map
                 def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
+                
                 def metaYaml = readMetaYaml(task)
-
 
                 def createAction = [
                     "@id"         : "#" + task.getHash().toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
                     "applicationCategory" : applicationCategory,
-                    "description" : metaYaml.description ?: '',
+                    "description" : metaYaml.get('description') ?: '',
                     // TODO: There is no description for Nextflow processes?
                     //"description" : "",
                     // TODO: task doesn't contain startTime information. TaskHandler does, but is not available to WrrocRenderer
@@ -350,11 +355,9 @@ class WrrocRenderer implements Renderer {
                     "instrument"  : ["@id": "#" + task.getProcessor().ownerScript.toString()],
                     "agent"       : ["@id": agent.get("@id").toString()],
                     "object"      : objectFileIDs.collect(file -> ["@id": file]),
-                    "result"      : resultFileIDs.collect(file -> ["@id": file]),
+                    "result"      : resultFileIDs.collect(file -> ["@id": file]), // (file, ontology -> ["@id": file, "ontology": ontology])
                     "actionStatus": task.getExitStatus() == 0 ? "CompletedActionStatus" : "FailedActionStatus"
                 ]
-
-                //println "Ext properties: ${task.getProcessor().getConfig().ext.properties}"
 
                 // Add error message if there is one
                 if (task.getExitStatus() != 0) {
@@ -643,44 +646,34 @@ class WrrocRenderer implements Renderer {
     // Read meta.yaml file from the script directory
     @CompileStatic
     private Map readMetaYaml(TaskRun task) {
-        try {
-            TaskProcessor processor = task.getProcessor()
-            WorkflowMetadata workflow = processor.getOwnerScript()?.getBinding()?.getVariable('workflow') as WorkflowMetadata
-            String projectDir = workflow?.getProjectDir()?.toString()
+        TaskProcessor processor = task.getProcessor()
+        WorkflowMetadata workflow = processor.getOwnerScript()?.getBinding()?.getVariable('workflow') as WorkflowMetadata
+        String projectDir = workflow?.getProjectDir()?.toString()
 
-            if (projectDir) {
-                String moduleName = processor.getName()
-                // Assuming meta.yaml is in a 'modules' directory under the project root
-                Path metaFile = Paths.get(projectDir, 'modules', moduleName, 'meta.yaml')
-                
-                if (Files.exists(metaFile)) {
-                    String content = metaFile.text
-                    Map result = [:]
-                    content.eachLine { String line ->
-                        if (line.trim() && !line.trim().startsWith('#')) {
-                            String[] parts = line.split(':', 2)
-                            if (parts.length == 2) {
-                                String key = parts[0].trim()
-                                String value = parts[1].trim()
-                                // Remove quotes if present
-                                if (value.startsWith('"') && value.endsWith('"')) {
-                                    value = value[1..-2]
-                                }
-                                result[key] = value
-                            }
-                        }
-                    }
-                    return result
-                } else {
-                    System.err.println("meta.yaml not found for module: ${moduleName}")
+        if (projectDir) {
+            String moduleName = processor.getName()
+
+            // Split the module name to get the tool name (last part)
+            String[] moduleNameParts = moduleName.split(':')
+            String toolName = moduleNameParts.length > 0 ? moduleNameParts[-1].toLowerCase() : moduleName.toLowerCase()
+
+            // Construct the path to the meta.yml file
+            Path metaFile = Paths.get(projectDir, 'modules', 'nf-core', toolName, 'meta.yml')
+
+            if (Files.exists(metaFile)) {
+                String content = metaFile.text
+                Yaml yaml = new Yaml()
+                Map result = yaml.load(content) as Map
+                return result
+                }
                 }
             } else {
                 System.err.println("Project directory not found")
             }
-        } catch (Exception e) {
-            System.err.println("Error reading meta.yaml for ${task.getName()}: ${e.message}")
+            } else {
+                System.err.println("Project directory not found")
         }
-        return [:]
+        return null
     }
 
     static String getDatePublished() {
