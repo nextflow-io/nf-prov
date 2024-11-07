@@ -334,29 +334,28 @@ class WrrocRenderer implements Renderer {
                     }
                 }
 
-                def processorConfig = task.getProcessor().getConfig()
-                def extProperties = processorConfig.ext as Map
-                def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
-                
-                def metaYaml = readMetaYaml(task)
-
                 //metaYaml.each { entry -> println "$entry" }
                 //print(metaYaml.find{it.key == "output"}.value.collect{it}.get(0))
                 //.find{it.key == "crate"}.value
-                def outputFilesEntries = metaYaml.find{it.key == "output"}.value.collect{it}.get(0) as Map
+                //println "metaYaml: $metaYaml"
+                //def outputFilesEntries = metaYaml.find{it.key == "output"}.value.collect{it}.get(0) as Map
                 //print(outputFilesEntries.each { entry -> println "$entry" })
                 //print(outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1))
-
-                def outputFilesEntriesPatterns = outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1).collect{it} as Map
-                print(outputFilesEntriesPatterns.each { entry -> println "$entry" })
+                //def outputFilesEntriesPatterns = outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1) as Map
+                //print(outputFilesEntriesPatterns.each { entry -> println "$entry" })
                 //outputFilesEntries.each { entry -> println "$entry" }
+                def processorConfig = task.getProcessor().getConfig()
+                def extProperties = processorConfig.ext as Map
+                def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
+
+                def metaYaml = readMetaYaml(task.getProcessor())
 
                 def createAction = [
                     "@id"         : "#" + task.getHash().toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
-                    "applicationCategory" : applicationCategory,
-                    "description" : metaYaml.get('description') ?: '',
+                    //"applicationCategory" : applicationCategory,
+                    //"description" : metaYaml.get('description') ?: '',
                     // TODO: There is no description for Nextflow processes?
                     //"description" : "",
                     // TODO: task doesn't contain startTime information. TaskHandler does, but is not available to WrrocRenderer
@@ -386,10 +385,31 @@ class WrrocRenderer implements Renderer {
 
         final wfSofwareApplications = nextflowProcesses
             .collect() { process ->
+                def metaYaml = readMetaYaml(process)
+                //def toolNameTask = metaYaml.get('name') ?: ''
+                def processorConfig = process.getConfig()
+                def extProperties = processorConfig.ext as Map
+                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                //def toolList = metaYaml.get('tools') ?
                 [
                     "@id"  : "#" + process.ownerScript.toString(),
                     "@type": "SoftwareApplication",
-                    "name" : process.getName()
+                    "name" : process.getName(),
+                    "about" : [ "@id": toolNameTask ]
+                ]
+            }
+
+        final aboutSoftware = nextflowProcesses
+            .collect () { process ->
+                def metaYaml = readMetaYaml(process)
+                //def toolNameTask = metaYaml.get('name') ?: ''
+                def processorConfig = process.getConfig()
+                def extProperties = processorConfig.ext as Map
+                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
+                [
+                    "@id": toolNameTask,
+                    "applicationCategory": applicationCategory
                 ]
             }
 
@@ -515,6 +535,7 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 *wfSofwareApplications,
+                *aboutSoftware,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
@@ -656,8 +677,7 @@ class WrrocRenderer implements Renderer {
 
     // Read meta.yaml file from the script directory
     @CompileStatic
-    private Map readMetaYaml(TaskRun task) {
-        TaskProcessor processor = task.getProcessor()
+    private Map readMetaYaml(TaskProcessor processor) {
         WorkflowMetadata workflow = processor.getOwnerScript()?.getBinding()?.getVariable('workflow') as WorkflowMetadata
         String projectDir = workflow?.getProjectDir()?.toString()
 
