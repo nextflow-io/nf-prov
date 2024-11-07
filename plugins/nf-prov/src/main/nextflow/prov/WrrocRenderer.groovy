@@ -401,66 +401,121 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final perToolName = nextflowProcesses
+        final perTool = nextflowProcesses
             .collect() { process ->
                 def metaYaml = readMetaYaml(process)
-                //def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
-                def manualList = new ArrayList()
+                def processorConfig = process.getConfig()
+                def extProperties = processorConfig.ext as Map
+                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                def generalList =  [:]
+                def toolMapList = new ArrayList()
                 def toolList = metaYaml.get('tools').each { tool ->
-                    //println tool.getClass()
                     def toolMap = tool as Map
+                    toolMapList.add(toolMap)
+                }
+                def maunualMap = new ArrayList()
+                toolMapList.each { toolMap ->
                     toolMap.each { field -> 
-                        field.value.each {entry -> //[//"softwareInfo": entry]
-                        // "object"      : entry.collect(file -> ["@id": file]) 
-                        // ]
-                            // println(entry)
-                            // println("-------")
-                            manualList.add(entry)
+                        def fieldMap = field as Map
+                        field.iterator().each {entry -> 
+                            entry.iterator().each {entryField -> 
+                                def entryFieldMap = entryField.getAt("value") as Map
+                                println(entryFieldMap.getAt("description"))
+                                maunualMap.add(entryFieldMap.getAt("description"))
+                                }
+                            
                         }
                     }
-                    // for (field in toolMap) {
-                    // for (entry in field.value) {
-                    //     println(entry)
-                    //     println("-------")
-                    // }
-                    // }
-                    // toolMap.each { field -> 
-                    // for (entry in field.value) {
-                    //     println(entry)
-                    //     println("-------")
-                    // }
-                    // }
+                    generalList[toolNameTask] = maunualMap
                 }
-                //println(manualList)
-                [ 
-                    "description": manualList.get(0),
-                    "identifier": manualList.last()
-                ]
+                print(generalList)
+                return generalList
             }
+
+        final perToolName = perTool.each { tool ->
+            [tool]
+            }
+
+        // final perToolName = perTool
+        //     .each { toolMap ->
+        //             def manualList = new ArrayList()
+        //             toolMap.each { field -> 
+        //                 def fieldMap = field as Map
+        //                 field.iterator().each {entry -> 
+        //                     entry.iterator().each {entryField -> 
+        //                         def entryFieldMap = entryField.getAt("value") as Map
+        //                         manualList.add(entryFieldMap.getAt("description"))
+        //                         }
+                            
+        //                 }
+        //             }
+        //         // println(manualList)
+        //         // [ 
+        //         //     manualList
+        //         // ]
+        //     }.collect()
+
+        // final perToolName = nextflowProcesses
+        //     .collect() { process ->
+        //         def metaYaml = readMetaYaml(process)
+        //         //def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+        //         def manualList = new ArrayList()
+        //         def toolList = metaYaml.get('tools').each { tool ->
+        //             //println tool.getClass()
+        //             def toolMap = tool as Map
+        //             toolMap.each { field -> 
+        //                 //println(field)
+        //                 field.value.each {entry -> //[//"softwareInfo": entry]
+        //                 // "object"      : entry.collect(file -> ["@id": file]) 
+        //                 // ]
+        //                     // println(entry)
+        //                     // println("-------")
+        //                     manualList.add(entry)
+        //                 }
+        //             }
+        //             // for (field in toolMap) {
+        //             // for (entry in field.value) {
+        //             //     println(entry)
+        //             //     println("-------")
+        //             // }
+        //             // }
+        //             // toolMap.each { field -> 
+        //             // for (entry in field.value) {
+        //             //     println(entry)
+        //             //     println("-------")
+        //             // }
+        //             // }
+        //         }
+        //         //println(manualList)
+        //         [ 
+        //             "description": manualList.get(0),
+        //             "identifier": manualList.last()
+        //         ]
+        //     }
         
         // final perToolName = perTool
         //     .collect() { field ->
         //         //println(field)
         //     }
 
-        final aboutSoftware = nextflowProcesses
-            .collect () { process ->
-                def metaYaml = readMetaYaml(process)
-                //def toolNameTask = metaYaml.get('name') ?: ''
-                def processorConfig = process.getConfig()
-                def extProperties = processorConfig.ext as Map
-                def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name') as String
-                def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
-                //metaYaml.get('tools').collect(file -> file)
-                def toolList = metaYaml.get('tools').collect() as Map
-                //def toolListSpecific = toolList.flatten() as Map
-                //def toolListSpecificName = toolListSpecific.getAt(toolNameTask).collect()
-                // println(toolList)
-                // def createAboutSoftware = [
+        // final aboutSoftware = nextflowProcesses
+        //     .collect () { process ->
+        //         def metaYaml = readMetaYaml(process)
+        //         //def toolNameTask = metaYaml.get('name') ?: ''
+        //         def processorConfig = process.getConfig()
+        //         def extProperties = processorConfig.ext as Map
+        //         def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name') as String
+        //         def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
+        //         //metaYaml.get('tools').collect(file -> file)
+        //         def toolList = metaYaml.get('tools').collect() as Map
+        //         //def toolListSpecific = toolList.flatten() as Map
+        //         //def toolListSpecificName = toolListSpecific.getAt(toolNameTask).collect()
+        //         // println(toolList)
+        //         // def createAboutSoftware = [
 
-                // ]
-                //return createAboutSoftware
-            }
+        //         // ]
+        //         //return createAboutSoftware
+        //     }
 
         final howToSteps = nextflowProcesses
             .collect() { process ->
@@ -584,7 +639,6 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 *wfSofwareApplications,
-                //*aboutSoftware,
                 *perToolName,
                 *formalParameters,
                 [
@@ -630,7 +684,6 @@ class WrrocRenderer implements Renderer {
                 *uniqueInputOutputFiles,
                 *propertyValues,
                 license,
-                *perToolName
             ].findAll { it != null }
         ]
 
