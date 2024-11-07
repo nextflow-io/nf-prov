@@ -428,13 +428,16 @@ class WrrocRenderer implements Renderer {
                     }
                     generalList[toolNameTask] = maunualMap
                 }
-                print(generalList)
-                return generalList
+                print(generalList.dump())
+                def createSoftwareFinal = [
+                    "@id"         : toolNameTask,
+                    "@type"       : "SoftwareApplication",
+                    "description" : generalList.getAt(toolNameTask).toString()
+                ]
+                return createSoftwareFinal
             }
 
-        final perToolName = perTool.each { tool ->
-            [tool]
-            }
+        final perToolName = perTool.collect()
 
         // final perToolName = perTool
         //     .each { toolMap ->
