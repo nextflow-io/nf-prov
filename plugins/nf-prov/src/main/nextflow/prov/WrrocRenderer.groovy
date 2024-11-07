@@ -405,15 +405,17 @@ class WrrocRenderer implements Renderer {
             .collect() { process ->
                 def metaYaml = readMetaYaml(process)
                 //def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
+                def manualList = new ArrayList()
                 def toolList = metaYaml.get('tools').each { tool ->
                     //println tool.getClass()
                     def toolMap = tool as Map
                     toolMap.each { field -> 
-                        field.value.each {entry -> [//"softwareInfo": entry]
-                        "object"      : entry.collect(file -> ["@id": file]) 
-                        ]
+                        field.value.each {entry -> //[//"softwareInfo": entry]
+                        // "object"      : entry.collect(file -> ["@id": file]) 
+                        // ]
                             // println(entry)
                             // println("-------")
+                            manualList.add(entry)
                         }
                     }
                     // for (field in toolMap) {
@@ -429,7 +431,11 @@ class WrrocRenderer implements Renderer {
                     // }
                     // }
                 }
-                
+                //println(manualList)
+                [ 
+                    "description": manualList.get(0),
+                    "identifier": manualList.last()
+                ]
             }
         
         // final perToolName = perTool
