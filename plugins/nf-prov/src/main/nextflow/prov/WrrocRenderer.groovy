@@ -46,6 +46,7 @@ import org.yaml.snakeyaml.Yaml
  *
  * @author Ben Sherman <bentshermann@gmail.com>
  * @author Felix Bartusch <felix.bartusch@uni-tuebingen.de>
+ * @author Famke Bäuerle <famke.baeuerle@uni-tuebingen.de>
  */
 @CompileStatic
 class WrrocRenderer implements Renderer {
@@ -322,7 +323,8 @@ class WrrocRenderer implements Renderer {
 
                         if (workflowInputs.contains(taskInputFilePath)) {
                             // The mapping of input files to their path in the RO-Crate is only available for files we
-                            // expect (e.g. files in workdir and pipeline assets). Have to handle unexpected files ...
+                            // expect (e.g. files in workdir and pipeline assets). 
+                            // TODO: Have to handle unexpected files ...
                             try {
                                 objectFileIDs.add(crateRootDir.relativize(workflowInputMapping.get(taskInputFilePath)).toString())
                             } catch(Exception e) {
@@ -334,28 +336,10 @@ class WrrocRenderer implements Renderer {
                     }
                 }
 
-                //metaYaml.each { entry -> println "$entry" }
-                //print(metaYaml.find{it.key == "output"}.value.collect{it}.get(0))
-                //.find{it.key == "crate"}.value
-                //println "metaYaml: $metaYaml"
-                //def outputFilesEntries = metaYaml.find{it.key == "output"}.value.collect{it}.get(0) as Map
-                //print(outputFilesEntries.each { entry -> println "$entry" })
-                //print(outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1))
-                //def outputFilesEntriesPatterns = outputFilesEntries.find{it.key == "reads"}.value.collect{it}.get(1) as Map
-                //print(outputFilesEntriesPatterns.each { entry -> println "$entry" })
-                //outputFilesEntries.each { entry -> println "$entry" }
-                def processorConfig = task.getProcessor().getConfig()
-                def extProperties = processorConfig.ext as Map
-                def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
-
-                def metaYaml = readMetaYaml(task.getProcessor())
-
                 def createAction = [
                     "@id"         : "#" + task.getHash().toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
-                    //"applicationCategory" : applicationCategory,
-                    //"description" : metaYaml.get('description') ?: '',
                     // TODO: There is no description for Nextflow processes?
                     //"description" : "",
                     // TODO: task doesn't contain startTime information. TaskHandler does, but is not available to WrrocRenderer
@@ -385,13 +369,13 @@ class WrrocRenderer implements Renderer {
 
         final wfSofwareApplications = nextflowProcesses
             .collect() { process ->
+                // read in meta.yaml file (nf-core style)
                 def metaYaml = readMetaYaml(process)
-                //def toolNameTask = metaYaml.get('name') ?: ''
+                // get ext properties from process
                 def processorConfig = process.getConfig()
                 def extProperties = processorConfig.ext as Map
+                // use either ext property 'name' or 'name' from meta.yaml
                 def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
-                //def toolList = 
-                // { tool -> println "$tool" }
                 [
                     "@id"  : "#" + process.ownerScript.toString(),
                     "@type": "SoftwareApplication",
@@ -403,122 +387,45 @@ class WrrocRenderer implements Renderer {
 
         final perTool = nextflowProcesses
             .collect() { process ->
+                // read in meta.yaml file (nf-core style)
                 def metaYaml = readMetaYaml(process)
+                // get ext properties from process
                 def processorConfig = process.getConfig()
                 def extProperties = processorConfig.ext as Map
+                // use either ext property 'name' or 'name' from meta.yaml
                 def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
-                def generalList =  [:]
-                def toolMapList = new ArrayList()
-                def toolList = metaYaml.get('tools').each { tool ->
-                    def toolMap = tool as Map
-                    toolMapList.add(toolMap)
-                }
-                def maunualMap = new ArrayList()
-                toolMapList.each { toolMap ->
+                
+                def listOfToolMaps = new ArrayList()
+                metaYaml.get('tools').each { tool -> listOfToolMaps.add( tool as Map ) }
+
+                // get descriptions for all tools used in process
+                // TODO: adapt so that multi-tool-processes get rendered seperately
+                // TODO: extract more information from meta.yaml
+                def softwareMap =  [:]
+                def listOfDescriptions = new ArrayList()
+                listOfToolMaps.each { toolMap ->
                     toolMap.each { field -> 
                         def fieldMap = field as Map
                         field.iterator().each {entry -> 
                             entry.iterator().each {entryField -> 
                                 def entryFieldMap = entryField.getAt("value") as Map
-                                println(entryFieldMap.getAt("description"))
-                                maunualMap.add(entryFieldMap.getAt("description"))
+                                listOfDescriptions.add(entryFieldMap.getAt("description"))
                                 }
                             
                         }
                     }
-                    generalList[toolNameTask] = maunualMap
+                    softwareMap[toolNameTask] = listOfDescriptions
                 }
-                print(generalList.dump())
+
                 def createSoftwareFinal = [
                     "@id"         : toolNameTask,
                     "@type"       : "SoftwareApplication",
-                    "description" : generalList.getAt(toolNameTask).toString()
+                    "description" : softwareMap.getAt(toolNameTask).toString()
                 ]
                 return createSoftwareFinal
             }
 
-        final perToolName = perTool.collect()
-
-        // final perToolName = perTool
-        //     .each { toolMap ->
-        //             def manualList = new ArrayList()
-        //             toolMap.each { field -> 
-        //                 def fieldMap = field as Map
-        //                 field.iterator().each {entry -> 
-        //                     entry.iterator().each {entryField -> 
-        //                         def entryFieldMap = entryField.getAt("value") as Map
-        //                         manualList.add(entryFieldMap.getAt("description"))
-        //                         }
-                            
-        //                 }
-        //             }
-        //         // println(manualList)
-        //         // [ 
-        //         //     manualList
-        //         // ]
-        //     }.collect()
-
-        // final perToolName = nextflowProcesses
-        //     .collect() { process ->
-        //         def metaYaml = readMetaYaml(process)
-        //         //def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name')
-        //         def manualList = new ArrayList()
-        //         def toolList = metaYaml.get('tools').each { tool ->
-        //             //println tool.getClass()
-        //             def toolMap = tool as Map
-        //             toolMap.each { field -> 
-        //                 //println(field)
-        //                 field.value.each {entry -> //[//"softwareInfo": entry]
-        //                 // "object"      : entry.collect(file -> ["@id": file]) 
-        //                 // ]
-        //                     // println(entry)
-        //                     // println("-------")
-        //                     manualList.add(entry)
-        //                 }
-        //             }
-        //             // for (field in toolMap) {
-        //             // for (entry in field.value) {
-        //             //     println(entry)
-        //             //     println("-------")
-        //             // }
-        //             // }
-        //             // toolMap.each { field -> 
-        //             // for (entry in field.value) {
-        //             //     println(entry)
-        //             //     println("-------")
-        //             // }
-        //             // }
-        //         }
-        //         //println(manualList)
-        //         [ 
-        //             "description": manualList.get(0),
-        //             "identifier": manualList.last()
-        //         ]
-        //     }
-        
-        // final perToolName = perTool
-        //     .collect() { field ->
-        //         //println(field)
-        //     }
-
-        // final aboutSoftware = nextflowProcesses
-        //     .collect () { process ->
-        //         def metaYaml = readMetaYaml(process)
-        //         //def toolNameTask = metaYaml.get('name') ?: ''
-        //         def processorConfig = process.getConfig()
-        //         def extProperties = processorConfig.ext as Map
-        //         def toolNameTask = extProperties.containsKey('name') ? extProperties.get('name') as String : metaYaml.get('name') as String
-        //         def applicationCategory = extProperties.containsKey('applicationCategory') ? extProperties.get('applicationCategory') as String : ''
-        //         //metaYaml.get('tools').collect(file -> file)
-        //         def toolList = metaYaml.get('tools').collect() as Map
-        //         //def toolListSpecific = toolList.flatten() as Map
-        //         //def toolListSpecificName = toolListSpecific.getAt(toolNameTask).collect()
-        //         // println(toolList)
-        //         // def createAboutSoftware = [
-
-        //         // ]
-        //         //return createAboutSoftware
-        //     }
+        final wfToolDescriptions = perTool.collect()
 
         final howToSteps = nextflowProcesses
             .collect() { process ->
@@ -642,7 +549,7 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 *wfSofwareApplications,
-                *perToolName,
+                *wfToolDescriptions,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
@@ -782,12 +689,17 @@ class WrrocRenderer implements Renderer {
         return workflowInputMapping
     }
 
-    // Read meta.yaml file from the script directory
-    @CompileStatic
-    private Map readMetaYaml(TaskProcessor processor) {
+    /**
+     * Read meta.yaml (nf-core style) file for a given Nextflow process.
+     *
+     * @param   TaskProcessor processor Nextflow process
+     * @return  Yaml as Map
+     */
+    static Map readMetaYaml(TaskProcessor processor) {
         WorkflowMetadata workflow = processor.getOwnerScript()?.getBinding()?.getVariable('workflow') as WorkflowMetadata
         String projectDir = workflow?.getProjectDir()?.toString()
 
+        // TODO: adapt this function to work with non-nf-core yaml files
         if (projectDir) {
             String moduleName = processor.getName()
 
@@ -799,18 +711,8 @@ class WrrocRenderer implements Renderer {
             Path metaFile = Paths.get(projectDir, 'modules', 'nf-core', toolName, 'meta.yml')
 
             if (Files.exists(metaFile)) {
-                String content = metaFile.text
                 Yaml yaml = new Yaml()
-                Map result = yaml.load(content) as Map
-                // result.get('tools').each { tool ->
-                //     println tool.getClass()
-                //     def toolMap = tool as Map
-                //     for (field in toolMap) {
-                //     for (entry in field.value) {
-                //         println(entry)
-                //     }
-                //     }}
-                return result
+                return yaml.load(metaFile.text) as Map
                 }
             }
         return null
