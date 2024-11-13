@@ -47,6 +47,7 @@ class WrrocRenderer implements Renderer {
 
     private LinkedHashMap agent
     private LinkedHashMap organization
+    private String publisherID
 
     private boolean overwrite
 
@@ -181,6 +182,7 @@ class WrrocRenderer implements Renderer {
         // Process wrroc configuration options
         agent = parseAgentInfo(wrrocParams)
         organization = parseOrganizationInfo(wrrocParams)
+        publisherID = getPublisherID(wrrocParams, agent, organization)
         if(organization)
             agent.put("affiliation", ["@id": organization.get("@id")])
         //license = parseLicenseInfo(wrrocParams)
@@ -404,8 +406,7 @@ class WrrocRenderer implements Renderer {
                     "@id"        : "./",
                     "@type"      : "Dataset",
                     "author"     : ["@id": agent.get("@id").toString()],
-                    //TODO Add publisher
-                    //"publisher"  : "",
+                    "publisher"  : publisherID ? ["@id": publisherID] : null,
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
                         ["@id": "https://w3id.org/ro/wfrun/process/0.1"],
@@ -426,7 +427,7 @@ class WrrocRenderer implements Renderer {
                         *createActions.collect(createAction -> ["@id": createAction["@id"]])
                     ],
                     "license"    : licenseURLvalid ? ["@id": licenseURL.toString()] : licenseString
-                ],
+                ].findAll { it.value != null },
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
                     "@type"  : "CreativeWork",
@@ -663,6 +664,37 @@ class WrrocRenderer implements Renderer {
             org.put("name", orgMap.get("name"))
 
         return org
+    }
+
+
+    /**
+     * Parse information about the RO-Crate publisher.
+     *
+     * @param params Nextflow parameters
+     * @return       Publisher ID
+     */
+    static def String getPublisherID(Map params, Map agent, Map organization) {
+
+        if (! params.containsKey("publisher"))
+            return null
+
+        Map publisherMap = params["publisher"] as Map
+        if (! publisherMap.containsKey("id"))
+            return null
+
+        String publisherID = publisherMap.get("id")
+        String agentID = ""
+        String organizationID = ""
+        if (agent)
+            agentID = agent.get("@id")
+        if (organization)
+            organizationID = organization.get("@id")
+
+        // Check if the publisher ID references either the organization or the agent
+        if (publisherID != agentID && publisherID != organizationID)
+            return null
+
+        return publisherID
     }
 
 
