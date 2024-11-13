@@ -45,6 +45,9 @@ class WrrocRenderer implements Renderer {
     private Path workdir
     private Path projectDir
 
+    private LinkedHashMap agent
+    private LinkedHashMap organization
+
     private boolean overwrite
 
     @Delegate
@@ -176,20 +179,12 @@ class WrrocRenderer implements Renderer {
         final organizeActionId = UUID.randomUUID()
 
         // Process wrroc configuration options
-        // agent information
-        final LinkedHashMap agent = new LinkedHashMap()
-        if (wrrocParams.containsKey("agent")) {
-            Map agentMap = wrrocParams["agent"] as Map
-            if (agentMap.containsKey("orcid")) {
-                agent.put("@id", agentMap.get("orcid"))
-            } else {
-                agent.put("@id", "agent-1")
-            }
-            agent.put("@type", "Person")
-            if (agentMap.containsKey("name")) {
-                agent.put("name", agentMap.get("name"))
-            }
-        }
+        agent = parseAgentInfo(wrrocParams)
+        organization = parseOrganizationInfo(wrrocParams)
+        if(organization)
+            agent.put("affiliation", ["@id": organization.get("@id")])
+        //license = parseLicenseInfo(wrrocParams)
+
 
         // license information
         boolean licenseURLvalid = false
@@ -239,6 +234,7 @@ class WrrocRenderer implements Renderer {
                     "name"          : target.name,
                     "description"   : "",
                     "encodingFormat": Files.probeContentType(source) ?: "",
+                    "fileType": "whatever",
                     // TODO: apply if matching param is found
                     // "exampleOfWork": ["@id": paramId]
                 ]
@@ -277,7 +273,7 @@ class WrrocRenderer implements Renderer {
                     "@type"        : "PropertyValue",
                     "exampleOfWork": ["@id": "#${name}"],
                     "name"         : name,
-                    "value"        : value
+                    "value"        : isNested(value) ? JsonOutput.toJson(value) : value
                 ]
             }
 
@@ -520,6 +516,7 @@ class WrrocRenderer implements Renderer {
                     )
                 ],
                 *[agent],
+                *[organization],
                 *controlActions,
                 *createActions,
                 configFile,
@@ -624,4 +621,59 @@ class WrrocRenderer implements Renderer {
     static String getDatePublished() {
         return LocalDateTime.now().format(DateTimeFormatter.ISO_DATE)
     }
+
+    /**
+     * Parse information about agent running the workflow from parameters
+     *
+     * @param params Nextflow parameters
+     * @return       Map describing agent via '@id'. 'orcid' and 'name'
+     */
+    static def LinkedHashMap parseAgentInfo(Map params) {
+        final LinkedHashMap agent = new LinkedHashMap()
+
+        if (! params.containsKey("agent"))
+            return null
+
+        Map agentMap = params["agent"] as Map
+        agent.put("@id", agentMap.containsKey("orcid") ? agentMap.get("orcid") : "agent-1")
+        agent.put("@type", "Person")
+        if(agentMap.containsKey("name"))
+            agent.put("name", agentMap.get("name"))
+
+        return agent
+    }
+
+
+    /**
+     * Parse information about organization agent running the workflow belongs to.
+     *
+     * @param params Nextflow parameters
+     * @return       Map describing organization via '@id'. 'orcid' and 'name'
+     */
+    static def LinkedHashMap parseOrganizationInfo(Map params) {
+        final LinkedHashMap org = new LinkedHashMap()
+
+        if (! params.containsKey("organization"))
+            return null
+
+        Map orgMap = params["organization"] as Map
+        org.put("@id", orgMap.containsKey("ror") ? orgMap.get("ror") : "organization-1")
+        org.put("@type", "Organization")
+        if(orgMap.containsKey("name"))
+            org.put("name", orgMap.get("name"))
+
+        return org
+    }
+
+
+    /**
+     * Check if a groovy object contains nested structures, e.g. will not be flattened when serialized as JSON
+     *
+     * @param obj The object to be checked
+     * @return    true if the object contains nested structures
+     */
+    static def boolean isNested(Object obj) {
+        return (obj instanceof Map || obj instanceof List)
+    }
 }
+
