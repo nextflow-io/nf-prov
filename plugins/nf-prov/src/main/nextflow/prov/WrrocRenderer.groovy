@@ -388,7 +388,7 @@ class WrrocRenderer implements Renderer {
                 "@type"         : "File",
                 "name"          : "Effective Nextflow configuration",
                 "description"   : "This is the effective configuration during runtime compiled from all configuration sources.",
-                "encodingFormat": "text/plain",
+                "encodingFormat": "text/plain"
             ]
 
         final wrroc = [
@@ -456,6 +456,7 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"                : metadata.projectName,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
+                    "encodingFormat"     : "application/nextflow",
                     "name"               : metadata.projectName,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
                     "hasPart"            : wfSofwareApplications.collect(sa ->
