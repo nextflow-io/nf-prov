@@ -41,8 +41,11 @@ import nextflow.processor.TaskRun
 class WrrocRenderer implements Renderer {
 
     private Path path
+    // The final RO-Crate directory
     private Path crateRootDir
+    // Nextflow work directory
     private Path workdir
+    // Nextflow pipeline directory (contains main.nf, assets, etc.)
     private Path projectDir
 
     private LinkedHashMap agent
@@ -110,7 +113,7 @@ class WrrocRenderer implements Renderer {
                     if (!Files.exists(dest))
                         Files.copy(source, dest)
                 } catch (Exception e) {
-                    println "Failed to copy $source to $dest: ${e.message}"
+                    println "workflowInput: Failed to copy $source to $dest: ${e.message}"
                 }
             }
         }
@@ -141,7 +144,7 @@ class WrrocRenderer implements Renderer {
                     Files.createDirectories(dest.getParent())
                     Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING)
                 } catch (Exception e) {
-                    println "Failed to copy $source to $dest: ${e.message}"
+                    println "workflowOutput Failed to copy $source to $dest: ${e.message}"
                 }
             }
         }
@@ -284,18 +287,29 @@ class WrrocRenderer implements Renderer {
 
         def createActions = tasks
             .collect { task ->
-
                 List<String> resultFileIDs = []
+
+                // Collect output files of the path
+                List<Path> outputFileList = []
                 for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
+
+                    if (taskOutputParam.getValue() instanceof Path) {
+                        outputFileList.add(taskOutputParam.getValue() as Path)
+                        continue
+                    }
+
                     for (taskOutputFile in taskOutputParam.getValue()) {
                         // Path to file in workdir
-                        Path taskOutputFilePath = Path.of(taskOutputFile.toString())
+                        outputFileList.add(Path.of(taskOutputFile.toString()))
+                    }
+                }
 
-                        if (workflowOutputs.containsKey(taskOutputFilePath)) {
-                            resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(taskOutputFilePath)).toString())
-                        } else {
-                            System.out.println("taskOutput not contained in workflowOutputs list: " + taskOutputFilePath)
-                        }
+                // Check if the output files have a mapping in workflowOutputs
+                for (outputFile in outputFileList) {
+                    if (workflowOutputs.containsKey(outputFile)) {
+                        resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(outputFile)).toString())
+                    } else {
+                        System.out.println("taskOutput not contained in workflowOutputs list: " + outputFile)
                     }
                 }
 
@@ -553,29 +567,41 @@ class WrrocRenderer implements Renderer {
     }
 
     def Map<Path, Path> getIntermediateOutputFiles(Set<TaskRun> tasks, Map<Path, Path> workflowOutputs) {
-        Map<Path, Path> intermediateInputFiles = [:]
 
-        tasks.collect { task ->
+        List<Path> intermediateOutputFilesList = []
+        Map<Path, Path> intermediateOutputFilesMap = [:]
+
+        tasks.each { task ->
             for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
+
+                // If the param is a Path, just add it to the intermediate list
+                if (taskOutputParam.getValue() instanceof Path) {
+                    intermediateOutputFilesList.add(taskOutputParam.getValue() as Path)
+                    continue
+                }
+
                 for (taskOutputFile in taskOutputParam.getValue()) {
-                    // Path to file in workdir
-                    Path taskOutputFilePath = Path.of(taskOutputFile.toString())
-
-                    if (! workflowOutputs.containsKey(taskOutputFilePath)) {
-
-                        // Find the relative path from workdir
-                        Path relativePath = workdir.relativize(taskOutputFilePath)
-
-                        // Build the new path by combining crateRootDir and the relative part
-                        Path outputFileInCrate = crateRootDir.resolve(workdir.fileName).resolve(relativePath)
-
-                        intermediateInputFiles.put(taskOutputFilePath, outputFileInCrate)
-                    }
+                    intermediateOutputFilesList.add(taskOutputFile as Path)
                 }
             }
         }
 
-        return intermediateInputFiles
+        // Iterate over the file list and create the mapping
+        for (outputFile in intermediateOutputFilesList) {
+            if (!workflowOutputs.containsKey(outputFile)) {
+
+                // Find the relative path from workdir
+                Path relativePath = workdir.relativize(outputFile)
+
+                // Build the new path by combining crateRootDir and the relative part
+                Path outputFileInCrate = crateRootDir.resolve(workdir.fileName).resolve(relativePath)
+
+                Files.createDirectories(outputFileInCrate.parent)
+                intermediateOutputFilesMap.put(outputFile, outputFileInCrate)
+            }
+        }
+
+        return intermediateOutputFilesMap
     }
 
     /**
@@ -606,14 +632,17 @@ class WrrocRenderer implements Renderer {
                 parentDir = assetDir
             else if (inputPath.startsWith(pipelineInfoDir))
                 parentDir = pipelineInfoDir
-            else {
-                System.out.println("Unknown parentDir: " + inputPath.toString())
-            }
+
 
             // Ignore file with unkown (e.g. null) parentDir
             if(parentDir) {
                 Path relativePath = parentDir.relativize(inputPath)
                 Path outputFileInCrate = crateRootDir.resolve(parentDir.fileName).resolve(relativePath)
+                workflowInputMapping.put(inputPath, outputFileInCrate)
+            } else {
+                // All other files are simple copied into the crate with their absolute path into the crate root
+                Path relativePath = Path.of(inputPath.toString().substring(1))
+                Path outputFileInCrate = crateRootDir.resolve(relativePath)
                 workflowInputMapping.put(inputPath, outputFileInCrate)
             }
         }
