@@ -235,7 +235,7 @@ class WrrocRenderer implements Renderer {
             .collect { source, target ->
                 [
                     "@id"           : crateRootDir.relativize(target).toString(),
-                    "@type"         : "File",
+                    "@type"         : getType(source),
                     "name"          : target.name,
                     "description"   : "",
                     "encodingFormat": Files.probeContentType(source) ?: "",
@@ -249,7 +249,7 @@ class WrrocRenderer implements Renderer {
             .collect { source, target ->
                 [
                     "@id"           : crateRootDir.relativize(target).toString(),
-                    "@type"         : "File",
+                    "@type"         : getType(source),
                     "name"          : target.name,
                     "description"   : "",
                     "encodingFormat": Files.probeContentType(target) ?: "",
@@ -737,5 +737,19 @@ class WrrocRenderer implements Renderer {
      */
     static def boolean isNested(Object obj) {
         return (obj instanceof Map || obj instanceof List)
+    }
+
+    /**
+     * Check if a Path is a file or a directory and return corresponding "@type"
+     * @param path The path to be checked
+     * @return type Either "File" or "Directory"
+     */
+    static def String getType(Path path) {
+        String type = "File"
+
+        if(path.isDirectory())
+            type = "Directory"
+
+        return type
     }
 }
