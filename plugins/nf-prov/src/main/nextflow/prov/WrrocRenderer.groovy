@@ -31,6 +31,8 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.processor.TaskRun
 
+import org.apache.commons.io.FilenameUtils;
+
 /**
  * Renderer for the Provenance Run RO Crate format.
  *
@@ -153,6 +155,42 @@ class WrrocRenderer implements Renderer {
         Path configFilePath = crateRootDir.resolve("nextflow.config")
         FileWriter configFileWriter = new FileWriter(configFilePath.toString())
         configMap.toConfigObject().writeTo(configFileWriter)
+
+        // get workflow README file and store it in crate
+        boolean readmeExists = false
+        List<String> readmeFiles = ["README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README"]
+        Path readmeFilePath = null
+        String readmeFileName = null
+        String readmeFileExtension = null
+        String readmeFileEncoding = null
+
+        for (String fileName : readmeFiles) {
+            Path potentialReadmePath = projectDir.resolve(fileName)
+            if (Files.exists(potentialReadmePath)) {
+                readmeExists = true
+                readmeFilePath = potentialReadmePath
+                readmeFileName = fileName
+                if (FilenameUtils.getExtension(fileName).equals("md"))
+                    readmeFileEncoding = "text/markdown"
+                else
+                    readmeFileEncoding = "text/plain"
+                break
+            }
+        }
+        def readmeFile = null
+
+        // Copy the README file into RO-Crate if it exists
+        if (readmeExists) {
+            Files.copy(readmeFilePath, crateRootDir.resolve(readmeFileName), StandardCopyOption.REPLACE_EXISTING)
+            readmeFile = 
+                [
+                    "@id"           : readmeFileName,
+                    "@type"         : "File",
+                    "name"          : readmeFileName,
+                    "description"   : "This is the README file of the workflow.",
+                    "encodingFormat": readmeFileEncoding
+                ]
+        }
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -434,8 +472,9 @@ class WrrocRenderer implements Renderer {
                     "hasPart"    : [
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
+                        readmeExists ? ["@id": readmeFile.get("@id")] : null,
                         *uniqueInputOutputFiles.collect(file -> ["@id": file["@id"]])
-                    ],
+                    ].findAll { it != null },
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
@@ -537,6 +576,7 @@ class WrrocRenderer implements Renderer {
                 *controlActions,
                 *createActions,
                 configFile,
+                readmeFile,
                 *uniqueInputOutputFiles,
                 *propertyValues,
                 license
