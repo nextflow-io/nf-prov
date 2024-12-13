@@ -387,7 +387,7 @@ class WrrocRenderer implements Renderer {
                     "agent"       : ["@id": agent.get("@id").toString()],
                     "object"      : objectFileIDs.collect(file -> ["@id": file]),
                     "result"      : resultFileIDs.collect(file -> ["@id": file]),
-                    "actionStatus": task.getExitStatus() == 0 ? "CompletedActionStatus" : "FailedActionStatus"
+                    "actionStatus": task.getExitStatus() == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
 
                 // Add error message if there is one
@@ -469,8 +469,8 @@ class WrrocRenderer implements Renderer {
                         ["@id": "https://w3id.org/ro/wfrun/provenance/0.1"],
                         ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
                     ],
-                    "name"       : "Workflow run of ${metadata.projectName}",
-                    "description": manifest.description ?: "",
+                    "name"       : "Workflow run of " + manifest.getName() ?: metadata.projectName,
+                    "description": manifest.description ?: null,
                     "hasPart"    : [
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
@@ -511,9 +511,16 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"                : metadata.projectName,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
-                    "encodingFormat"     : "application/nextflow",
-                    "name"               : metadata.projectName,
+                    "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
+                    "name"               : manifest.getName() ?: metadata.projectName,
+                    "description"        : manifest.getDescription() ?: null,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
+                    "creator"            : manifest.getAuthor() ?: null,
+                    "version"            : manifest.getVersion() ?: null,
+                    "license"            : manifest.getLicense() ?: null,
+                    "url"                : manifest.getHomePage() ?: null,
+                    "encodingFormat"     : "application/nextflow",
+                    "runtimePlatform"    : manifest.getNextflowVersion() ? "Nextflow " + manifest.getNextflowVersion() : null,
                     "hasPart"            : wfSofwareApplications.collect(sa ->
                         ["@id": sa["@id"]]
                     ),
@@ -526,7 +533,7 @@ class WrrocRenderer implements Renderer {
                     "step"               : howToSteps.collect(step ->
                         ["@id": step["@id"]]
                     ),
-                ],
+                ].findAll { it.value != null },
                 [
                     "@id"       : "https://w3id.org/workflowhub/workflow-ro-crate#nextflow",
                     "@type"     : "ComputerLanguage",
