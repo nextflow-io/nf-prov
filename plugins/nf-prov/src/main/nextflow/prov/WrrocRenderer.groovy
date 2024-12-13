@@ -52,6 +52,8 @@ class WrrocRenderer implements Renderer {
 
     private LinkedHashMap agent
     private LinkedHashMap organization
+    // List of contactPoints (people, organizations) to be added to ro-crate-metadata.json
+    private List<LinkedHashMap> contactPoints = []
     private String publisherID
 
     private boolean overwrite
@@ -573,6 +575,7 @@ class WrrocRenderer implements Renderer {
                 ],
                 *[agent],
                 *[organization],
+                *contactPoints,
                 *controlActions,
                 *createActions,
                 configFile,
@@ -700,17 +703,27 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing agent via '@id'. 'orcid' and 'name'
      */
-    static def LinkedHashMap parseAgentInfo(Map params) {
+    def LinkedHashMap parseAgentInfo(Map params) {
         final LinkedHashMap agent = new LinkedHashMap()
 
         if (! params.containsKey("agent"))
             return null
 
         Map agentMap = params["agent"] as Map
+
         agent.put("@id", agentMap.containsKey("orcid") ? agentMap.get("orcid") : "agent-1")
         agent.put("@type", "Person")
         if(agentMap.containsKey("name"))
             agent.put("name", agentMap.get("name"))
+
+        // Check for contact information
+        if(agentMap.containsKey("email") || agentMap.containsKey("phone")) {
+            // Add contact point to ro-crate-metadata.json
+            String contactPointID = parseContactPointInfo(agentMap)
+            if(contactPointID)
+                agent.put("contactPoint", ["@id": contactPointID ])
+
+        }
 
         return agent
     }
@@ -722,7 +735,7 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing organization via '@id'. 'orcid' and 'name'
      */
-    static def LinkedHashMap parseOrganizationInfo(Map params) {
+    def LinkedHashMap parseOrganizationInfo(Map params) {
         final LinkedHashMap org = new LinkedHashMap()
 
         if (! params.containsKey("organization"))
@@ -734,7 +747,54 @@ class WrrocRenderer implements Renderer {
         if(orgMap.containsKey("name"))
             org.put("name", orgMap.get("name"))
 
+        // Check for contact information
+        if(orgMap.containsKey("email") || orgMap.containsKey("phone")) {
+            // Add contact point to ro-crate-metadata.json
+            String contactPointID = parseContactPointInfo(orgMap)
+            if(contactPointID)
+                org.put("contactPoint", ["@id": contactPointID ])
+        }
+
         return org
+    }
+
+
+    /**
+     * Parse information about contact point and add to contactPoints list.
+     *
+     * @param params Map describing an agent or organization
+     * @return       ID of the contactPoint
+     */
+    def String parseContactPointInfo(Map map) {
+
+        String contactPointID = ""
+        final LinkedHashMap contactPoint = new LinkedHashMap()
+
+        // Prefer email for the contact point ID
+        if(map.containsKey("email"))
+            contactPointID = "mailto:" + map.get("email")
+        else if(map.containsKey("phone"))
+            contactPointID = map.get("phone")
+        else
+            return null
+
+        contactPoint.put("@id", contactPointID)
+        contactPoint.put("@type", "ContactPoint")
+        if(map.containsKey("contactType"))
+            contactPoint.put("contactType", map.get("contactType"))
+        if(map.containsKey("email"))
+            contactPoint.put("email", map.get("email"))
+        if(map.containsKey("phone"))
+            contactPoint.put("phone", map.get("phone"))
+        if(map.containsKey("orcid"))
+            contactPoint.put("url", map.get("orcid"))
+        if(map.containsKey("orcid"))
+            contactPoint.put("url", map.get("orcid"))
+        if(map.containsKey("rar"))
+            contactPoint.put("url", map.get("rar"))
+
+        contactPoints.add(contactPoint)
+        return contactPointID
     }
 
 
