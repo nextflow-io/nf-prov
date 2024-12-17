@@ -32,6 +32,8 @@ import nextflow.Session
 import nextflow.processor.TaskRun
 import org.apache.commons.io.FilenameUtils
 
+import org.apache.commons.io.FilenameUtils;
+
 /**
  * Renderer for the Provenance Run RO Crate format.
  *
@@ -51,6 +53,8 @@ class WrrocRenderer implements Renderer {
 
     private LinkedHashMap agent
     private LinkedHashMap organization
+    // List of contactPoints (people, organizations) to be added to ro-crate-metadata.json
+    private List<LinkedHashMap> contactPoints = []
     private String publisherID
 
     private boolean overwrite
@@ -154,6 +158,42 @@ class WrrocRenderer implements Renderer {
         Path configFilePath = crateRootDir.resolve("nextflow.config")
         FileWriter configFileWriter = new FileWriter(configFilePath.toString())
         configMap.toConfigObject().writeTo(configFileWriter)
+
+        // get workflow README file and store it in crate
+        boolean readmeExists = false
+        List<String> readmeFiles = ["README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README"]
+        Path readmeFilePath = null
+        String readmeFileName = null
+        String readmeFileExtension = null
+        String readmeFileEncoding = null
+
+        for (String fileName : readmeFiles) {
+            Path potentialReadmePath = projectDir.resolve(fileName)
+            if (Files.exists(potentialReadmePath)) {
+                readmeExists = true
+                readmeFilePath = potentialReadmePath
+                readmeFileName = fileName
+                if (FilenameUtils.getExtension(fileName).equals("md"))
+                    readmeFileEncoding = "text/markdown"
+                else
+                    readmeFileEncoding = "text/plain"
+                break
+            }
+        }
+        def readmeFile = null
+
+        // Copy the README file into RO-Crate if it exists
+        if (readmeExists) {
+            Files.copy(readmeFilePath, crateRootDir.resolve(readmeFileName), StandardCopyOption.REPLACE_EXISTING)
+            readmeFile = 
+                [
+                    "@id"           : readmeFileName,
+                    "@type"         : "File",
+                    "name"          : readmeFileName,
+                    "description"   : "This is the README file of the workflow.",
+                    "encodingFormat": readmeFileEncoding
+                ]
+        }
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -348,7 +388,7 @@ class WrrocRenderer implements Renderer {
                     "agent"       : ["@id": agent.get("@id").toString()],
                     "object"      : objectFileIDs.collect(file -> ["@id": file]),
                     "result"      : resultFileIDs.collect(file -> ["@id": file]),
-                    "actionStatus": task.getExitStatus() == 0 ? "CompletedActionStatus" : "FailedActionStatus"
+                    "actionStatus": task.getExitStatus() == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
 
                 // Add error message if there is one
@@ -430,13 +470,14 @@ class WrrocRenderer implements Renderer {
                         ["@id": "https://w3id.org/ro/wfrun/provenance/0.1"],
                         ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
                     ],
-                    "name"       : "Workflow run of ${metadata.projectName}",
+                    "name"       : "Workflow run of " + manifest.getName() ?: metadata.projectName,
                     "description": manifest.description ?: null,
                     "hasPart"    : [
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
+                        readmeExists ? ["@id": readmeFile.get("@id")] : null,
                         *uniqueInputOutputFiles.collect(file -> ["@id": file["@id"]])
-                    ],
+                    ].findAll { it != null },
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
@@ -471,9 +512,16 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"                : metadata.projectName,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
-                    "encodingFormat"     : "application/nextflow",
-                    "name"               : metadata.projectName,
+                    "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
+                    "name"               : manifest.getName() ?: metadata.projectName,
+                    "description"        : manifest.getDescription() ?: null,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
+                    "creator"            : manifest.getAuthor() ?: null,
+                    "version"            : manifest.getVersion() ?: null,
+                    "license"            : manifest.getLicense() ?: null,
+                    "url"                : manifest.getHomePage() ?: null,
+                    "encodingFormat"     : "application/nextflow",
+                    "runtimePlatform"    : manifest.getNextflowVersion() ? "Nextflow " + manifest.getNextflowVersion() : null,
                     "hasPart"            : wfSofwareApplications.collect(sa ->
                         ["@id": sa["@id"]]
                     ),
@@ -486,7 +534,7 @@ class WrrocRenderer implements Renderer {
                     "step"               : howToSteps.collect(step ->
                         ["@id": step["@id"]]
                     ),
-                ],
+                ].findAll { it.value != null },
                 [
                     "@id"       : "https://w3id.org/workflowhub/workflow-ro-crate#nextflow",
                     "@type"     : "ComputerLanguage",
@@ -535,9 +583,11 @@ class WrrocRenderer implements Renderer {
                 ],
                 *[agent],
                 *[organization],
+                *contactPoints,
                 *controlActions,
                 *createActions,
                 configFile,
+                readmeFile,
                 *uniqueInputOutputFiles,
                 *propertyValues,
                 license
@@ -661,17 +711,27 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing agent via '@id'. 'orcid' and 'name'
      */
-    static def LinkedHashMap parseAgentInfo(Map params) {
+    def LinkedHashMap parseAgentInfo(Map params) {
         final LinkedHashMap agent = new LinkedHashMap()
 
         if (! params.containsKey("agent"))
             return null
 
         Map agentMap = params["agent"] as Map
+
         agent.put("@id", agentMap.containsKey("orcid") ? agentMap.get("orcid") : "agent-1")
         agent.put("@type", "Person")
         if(agentMap.containsKey("name"))
             agent.put("name", agentMap.get("name"))
+
+        // Check for contact information
+        if(agentMap.containsKey("email") || agentMap.containsKey("phone")) {
+            // Add contact point to ro-crate-metadata.json
+            String contactPointID = parseContactPointInfo(agentMap)
+            if(contactPointID)
+                agent.put("contactPoint", ["@id": contactPointID ])
+
+        }
 
         return agent
     }
@@ -683,7 +743,7 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing organization via '@id'. 'orcid' and 'name'
      */
-    static def LinkedHashMap parseOrganizationInfo(Map params) {
+    def LinkedHashMap parseOrganizationInfo(Map params) {
         final LinkedHashMap org = new LinkedHashMap()
 
         if (! params.containsKey("organization"))
@@ -695,7 +755,54 @@ class WrrocRenderer implements Renderer {
         if(orgMap.containsKey("name"))
             org.put("name", orgMap.get("name"))
 
+        // Check for contact information
+        if(orgMap.containsKey("email") || orgMap.containsKey("phone")) {
+            // Add contact point to ro-crate-metadata.json
+            String contactPointID = parseContactPointInfo(orgMap)
+            if(contactPointID)
+                org.put("contactPoint", ["@id": contactPointID ])
+        }
+
         return org
+    }
+
+
+    /**
+     * Parse information about contact point and add to contactPoints list.
+     *
+     * @param params Map describing an agent or organization
+     * @return       ID of the contactPoint
+     */
+    def String parseContactPointInfo(Map map) {
+
+        String contactPointID = ""
+        final LinkedHashMap contactPoint = new LinkedHashMap()
+
+        // Prefer email for the contact point ID
+        if(map.containsKey("email"))
+            contactPointID = "mailto:" + map.get("email")
+        else if(map.containsKey("phone"))
+            contactPointID = map.get("phone")
+        else
+            return null
+
+        contactPoint.put("@id", contactPointID)
+        contactPoint.put("@type", "ContactPoint")
+        if(map.containsKey("contactType"))
+            contactPoint.put("contactType", map.get("contactType"))
+        if(map.containsKey("email"))
+            contactPoint.put("email", map.get("email"))
+        if(map.containsKey("phone"))
+            contactPoint.put("phone", map.get("phone"))
+        if(map.containsKey("orcid"))
+            contactPoint.put("url", map.get("orcid"))
+        if(map.containsKey("orcid"))
+            contactPoint.put("url", map.get("orcid"))
+        if(map.containsKey("rar"))
+            contactPoint.put("url", map.get("rar"))
+
+        contactPoints.add(contactPoint)
+        return contactPointID
     }
 
 
