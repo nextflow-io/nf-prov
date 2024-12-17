@@ -30,6 +30,7 @@ import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.processor.TaskRun
+import org.apache.commons.io.FilenameUtils
 
 import org.apache.commons.io.FilenameUtils;
 
@@ -261,46 +262,46 @@ class WrrocRenderer implements Renderer {
                     "additionalType": "String",
                     // "defaultValue": "",
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
-                    "description"   : "",
-                    // TODO: apply only if type is Path
-                    // "encodingFormat": "text/plain",
+                    "description"   : null,
+                    "encodingFormat": getEncodingFormat(value),
                     // TODO: match to output if type is Path
                     // "workExample": ["@id": outputId],
                     "name"          : name,
                     // "valueRequired": "True"
-                ]
+                ].findAll { it.value != null }
             }
 
         final inputFiles = workflowInputMapping
             .collect { source, target ->
                 [
                     "@id"           : crateRootDir.relativize(target).toString(),
-                    "@type"         : "File",
+                    "@type"         : getType(source),
                     "name"          : target.name,
-                    "description"   : "",
-                    "encodingFormat": Files.probeContentType(source) ?: "",
-                    "fileType": "whatever",
+                    "description"   : null,
+                    "encodingFormat": getEncodingFormat(source, target),
+                    //"fileType": "whatever",
                     // TODO: apply if matching param is found
                     // "exampleOfWork": ["@id": paramId]
-                ]
+                ].findAll { it.value != null }
             }
 
         final outputFiles = workflowOutputs
             .collect { source, target ->
                 [
                     "@id"           : crateRootDir.relativize(target).toString(),
-                    "@type"         : "File",
+                    "@type"         : getType(source),
                     "name"          : target.name,
-                    "description"   : "",
-                    "encodingFormat": Files.probeContentType(target) ?: "",
+                    "description"   : null,
+                    "encodingFormat": getEncodingFormat(source, target),
                     // TODO: create FormalParameter for each output file?
                     // "exampleOfWork": {"@id": "#reversed"}
-                ]
+                ].findAll { it.value != null }
             }
 
         // Combine both, inputFiles and outputFiles into one list. Remove duplicates that occur when an intermediate
         // file is output of a task and input of another task.
-        Map<String, LinkedHashMap<String, String>> combinedInputOutputMap = [:]
+        //Map<String, LinkedHashMap<String, String>> combinedInputOutputMap = [:]
+        Map combinedInputOutputMap = [:]
 
         inputFiles.each { entry ->
             combinedInputOutputMap[entry['@id']] = entry
@@ -309,7 +310,7 @@ class WrrocRenderer implements Renderer {
         outputFiles.each { entry ->
             combinedInputOutputMap[entry['@id']] = entry
         }
-        List<LinkedHashMap<String, String>> uniqueInputOutputFiles = combinedInputOutputMap.values().toList()
+        List uniqueInputOutputFiles = combinedInputOutputMap.values().toList()
 
         final propertyValues = params
             .collect { name, value ->
@@ -844,5 +845,76 @@ class WrrocRenderer implements Renderer {
      */
     static def boolean isNested(Object obj) {
         return (obj instanceof Map || obj instanceof List)
+    }
+
+    /**
+     * Check if a Path is a file or a directory and return corresponding "@type"
+     *
+     * @param path The path to be checked
+     * @return type Either "File" or "Directory"
+     */
+    static def String getType(Path path) {
+        String type = "File"
+
+        if(path.isDirectory())
+            type = "Directory"
+
+        return type
+    }
+
+    /**
+     * Get the encodingFormat of a file as MIME Type.
+     *
+     * @param object An object that may be a file
+     * @return the MIME type of the object or null, if it's not a file.
+     */
+    static def String getEncodingFormat(Object object) {
+
+        // Check if the object is a string and convert it to a Path
+        if (object instanceof String) {
+            Path path = Paths.get((String) object);
+            return getEncodingFormat(path, null)
+        } else {
+            return null
+        }
+    }
+
+
+    /**
+     * Get the encodingFormat of a file as MIME Type.
+     * A file can exist at two places. At the source where Nextflow or the user stored the file,
+     * or in the RO-Crate (i.e. target) location. The method takes both locations as arguments, if one
+     * of the locations does not exist any more.
+     *
+     * @param source Path to file
+     * @param target Path to file
+     * @return the MIME type of the file or null, if it's not a file.
+     */
+    static def String getEncodingFormat(Path source, Path target) {
+        String mime = null
+
+        if(source && source.exists() && source.isFile())
+            mime = Files.probeContentType(source) ?: null
+        else if(target && target.exists() && target.isFile())
+            mime = Files.probeContentType(target) ?: null
+        else {
+            return mime
+        }
+
+        // It seems that YAML has a media type only since beginning of 2024
+        // Set this by hand if this is run on older systems:
+        // https://httptoolkit.com/blog/yaml-media-type-rfc/
+         if(!mime) {
+             String extension = null
+             if(source)
+                 extension = FilenameUtils.getExtension(source.toString())
+             else if(target)
+                 extension = FilenameUtils.getExtension(target.toString())
+
+             if(["yml", "yaml"].contains(extension))
+                mime = "application/yaml"
+         }
+
+        return mime
     }
 }
