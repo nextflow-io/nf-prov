@@ -6,7 +6,7 @@ Nextflow plugin to render provenance reports for pipeline runs. Now supporting [
 
 The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
 
-*New in version 1.3.0: requires Nextflow 24.10.0 or later.*
+_New in version 1.3.0: requires Nextflow 24.10.0 or later._
 
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
@@ -26,11 +26,11 @@ prov {
 }
 ```
 
-Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically generate a JSON file with provenance information.
+Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically produce the specified provenance reports at the end of the workflow run.
 
 ## Configuration
 
-*The `file`, `format`, and `overwrite` options have been deprecated since version 1.2.0. Use `formats` instead.*
+_The `file`, `format`, and `overwrite` options have been deprecated since version 1.2.0. Use `formats` instead._
 
 The following options are available:
 
@@ -40,17 +40,21 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.formats`
 
-*New in version 1.2.0*
+_New in version 1.2.0_
 
 Configuration scope for the desired output formats. The following formats are available:
 
 - `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
 
-  *New in version 1.3.0*: additional "pass-through" options are available for BCO fields that can't be inferred from the pipeline. See [BCO.md](./BCO.md) for more information.
+  _New in version 1.3.0_: additional "pass-through" options are available for BCO fields that can't be inferred from the pipeline. See [BCO.md](./BCO.md) for more information.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
 - `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
+
+_New in version 1.4.0_
+
+- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance).
 
 Any number of formats can be specified, for example:
 
@@ -65,6 +69,27 @@ prov {
       file = 'manifest.json'
       overwrite = true
     }
+    wrroc {
+    file = 'ro-crate-metadata.json'
+    overwrite = true
+    agent {
+        name = "John Doe"
+        orcid = "https://orcid.org/0000-0000-0000-0000"
+        email = "john.doe@example.org"
+        phone = "(0)89-99998 000"
+        contactType = "Researcher"
+    }
+    organization {
+        name = "University of XYZ"
+        ror = "https://ror.org/000000000"
+        isPublisher = true
+    }
+    publisher {
+        id = "https://ror.org/000000000"
+    }
+    license = "https://spdx.org/licenses/Apache-2.0"
+    profile = "provenance_run_crate"
+}
   }
 }
 ```
@@ -107,23 +132,22 @@ Following these step to package, upload and publish the plugin:
 1. Create a file named `gradle.properties` in the project root containing the following attributes
    (this file should not be committed in the project repository):
 
-  * `github_organization`: the GitHub organisation the plugin project is hosted
-  * `github_username` The GitHub username granting access to the plugin project.
-  * `github_access_token`:  The GitHub access token required to upload and commit changes in the plugin repository.
-  * `github_commit_email`:  The email address associated with your GitHub account.
+- `github_organization`: the GitHub organisation the plugin project is hosted
+- `github_username` The GitHub username granting access to the plugin project.
+- `github_access_token`: The GitHub access token required to upload and commit changes in the plugin repository.
+- `github_commit_email`: The email address associated with your GitHub account.
 
 2. Update the `Plugin-Version` field in the following file with the release version:
 
-    ```bash
-    plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
-    ```
+   ```bash
+   plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
+   ```
 
 3. Run the following command to package and upload the plugin in the GitHub project releases page:
 
-    ```bash
-    ./gradlew :plugins:nf-prov:upload
-    ```
+   ```bash
+   ./gradlew :plugins:nf-prov:upload
+   ```
 
-4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) 
-  project to make the plugin public accessible to Nextflow app. 
-
+4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
+   project to make the plugin public accessible to Nextflow app.
