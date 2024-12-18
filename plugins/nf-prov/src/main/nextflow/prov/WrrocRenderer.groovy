@@ -20,6 +20,7 @@ import nextflow.config.ConfigMap
 import nextflow.file.FileHolder
 import nextflow.script.params.FileInParam
 import nextflow.script.params.FileOutParam
+import nextflow.script.ScriptMeta
 
 import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributes
@@ -30,9 +31,10 @@ import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.processor.TaskRun
-import org.apache.commons.io.FilenameUtils
+import nextflow.processor.*
+import org.yaml.snakeyaml.Yaml
 
-import org.apache.commons.io.FilenameUtils;
+import org.apache.commons.io.FilenameUtils
 
 /**
  * Renderer for the Provenance Run RO Crate format.
@@ -407,12 +409,64 @@ class WrrocRenderer implements Renderer {
 
         final wfSofwareApplications = nextflowProcesses
             .collect() { process ->
+                def metaYaml = readMetaYaml(process)
+                if (metaYaml == null) {
+                    return [
+                        "@id"    : "#" + process.ownerScript.toString(),
+                        "@type"  : "SoftwareApplication",
+                        "name"   : process.getName(),
+                    ]
+                }
+                
+                def moduleName = metaYaml.get('name') as String
+                def toolNames = []
+                
+                metaYaml.get('tools')?.each { tool ->
+                    def entry = (tool as Map).entrySet().first()
+                    def toolName = entry.key as String
+                    toolNames << toolName
+                }
+                
                 [
-                    "@id"  : "#" + process.ownerScript.toString(),
-                    "@type": "SoftwareApplication",
-                    "name" : process.getName()
+                    "@id"    : "#" + process.ownerScript.toString(),
+                    "@type"  : "SoftwareApplication",
+                    "name"   : process.getName(),
+                    "hasPart": toolNames.isEmpty() ? null : toolNames.collect { name -> ["@id": moduleName + '-' + name] }
                 ]
             }
+
+        final perTool = nextflowProcesses
+            .collect() { process ->
+                def metaYaml = readMetaYaml(process)
+                if (metaYaml == null) {
+                    return null
+                }
+
+                def moduleName = metaYaml.get('name') as String
+                def listOfToolMaps = []
+                metaYaml.get('tools')?.each { tool -> listOfToolMaps.add(tool as Map) }
+
+                def softwareMaps = listOfToolMaps.collect { toolMap ->
+                    def entry = (toolMap as Map).entrySet().first()
+                    def toolName = entry.key as String
+                    def toolDescription = (entry.value as Map)?.get('description') as String
+                    [(toolName): toolDescription]
+                }
+
+                // Create a list of SoftwareApplication entries
+                def softwareApplications = softwareMaps.collect { softwareMap ->
+                    def entry = (softwareMap as Map).entrySet().first()
+                    def toolName = entry.key as String
+                    [
+                        "@id"         : moduleName + '-' + toolName,
+                        "@type"       : "SoftwareApplication",
+                        "name"        : toolName,
+                        "description" : entry.value?.toString() ?: ""
+                    ]
+                }
+
+                return softwareApplications
+            }.findAll { it != null }.flatten()
 
         final howToSteps = nextflowProcesses
             .collect() { process ->
@@ -544,6 +598,7 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 *wfSofwareApplications,
+                *perTool,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
@@ -590,7 +645,7 @@ class WrrocRenderer implements Renderer {
                 readmeFile,
                 *uniqueInputOutputFiles,
                 *propertyValues,
-                license
+                license,
             ].findAll { it != null }
         ]
 
@@ -835,6 +890,23 @@ class WrrocRenderer implements Renderer {
 
         return publisherID
     }
+
+    /**
+     * Read meta.yaml (nf-core style) file for a given Nextflow process.
+     *
+     * @param   TaskProcessor processor Nextflow process
+     * @return  Yaml as Map
+     */
+    static Map readMetaYaml(TaskProcessor processor) {
+        Path metaFile = ScriptMeta.get(processor.getOwnerScript()).getModuleDir().resolve('meta.yml')
+
+        if (Files.exists(metaFile)) {
+            Yaml yaml = new Yaml()
+            return yaml.load(metaFile.text) as Map
+            }
+
+        return null
+        }
 
 
     /**
