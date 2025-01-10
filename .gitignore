@@ -8,6 +8,3 @@ gradle.properties
 build
 work
 results
-
-# Ignore vscode dirs
-.vscode

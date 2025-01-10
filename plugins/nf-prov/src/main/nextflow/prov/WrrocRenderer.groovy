@@ -16,13 +16,12 @@
 
 package nextflow.prov
 
-import nextflow.config.ConfigMap
-import nextflow.file.FileHolder
-import nextflow.script.params.FileInParam
-import nextflow.script.params.FileOutParam
-import nextflow.script.ScriptMeta
-
-import java.nio.file.*
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.Paths
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -30,39 +29,44 @@ import java.time.format.DateTimeFormatter
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
+import nextflow.config.ConfigMap
+import nextflow.file.FileHolder
+import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
-import nextflow.processor.*
-import org.yaml.snakeyaml.Yaml
-
+import nextflow.script.params.FileInParam
+import nextflow.script.params.FileOutParam
+import nextflow.script.ScriptMeta
 import org.apache.commons.io.FilenameUtils
+import org.yaml.snakeyaml.Yaml
 
 /**
  * Renderer for the Provenance Run RO Crate format.
  *
  * @author Ben Sherman <bentshermann@gmail.com>
  * @author Felix Bartusch <felix.bartusch@uni-tuebingen.de>
+ * @author Famke Bäuerle <famke.baeuerle@qbic.uni-tuebingen.de>
  */
 @CompileStatic
 class WrrocRenderer implements Renderer {
 
     private Path path
+
+    private boolean overwrite
+
+    @Delegate
+    private PathNormalizer normalizer
+
     // The final RO-Crate directory
     private Path crateRootDir
     // Nextflow work directory
     private Path workdir
     // Nextflow pipeline directory (contains main.nf, assets, etc.)
     private Path projectDir
-
-    private LinkedHashMap agent
-    private LinkedHashMap organization
+    private Map agent
+    private Map organization
     // List of contactPoints (people, organizations) to be added to ro-crate-metadata.json
-    private List<LinkedHashMap> contactPoints = []
+    private List<Map> contactPoints = []
     private String publisherID
-
-    private boolean overwrite
-
-    @Delegate
-    private PathNormalizer normalizer
 
     WrrocRenderer(Map opts) {
         path = opts.file as Path
@@ -71,11 +75,12 @@ class WrrocRenderer implements Renderer {
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
 
-    @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path, Path> workflowOutputs) {
+    private static final List<String> README_FILENAMES = List.of("README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README")
 
-        final params = session.getBinding().getParams() as Map
-        final configMap = new ConfigMap(session.getConfig())
+    @Override
+    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
+        final params = session.params
+        final configMap = session.config
 
         // Set RO-Crate Root and workdir
         this.crateRootDir = Path.of(params['outdir'].toString()).toAbsolutePath()
@@ -87,16 +92,15 @@ class WrrocRenderer implements Renderer {
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
 
         // Add intermediate input files (produced by workflow tasks and consumed by other tasks)
-        workflowInputs.addAll(getIntermediateInputFiles(tasks, workflowInputs));
-        final Map<Path, Path> workflowInputMapping = getWorkflowInputMapping(workflowInputs)
+        workflowInputs.addAll(getIntermediateInputFiles(tasks, workflowInputs))
+        final workflowInputMapping = getWorkflowInputMapping(workflowInputs)
 
         // Add intermediate output files (produced by workflow tasks and consumed by other tasks)
-        workflowOutputs.putAll(getIntermediateOutputFiles(tasks, workflowOutputs));
+        workflowOutputs.putAll(getIntermediateOutputFiles(tasks, workflowOutputs))
 
         // Copy workflow input files into RO-Crate
-        workflowInputMapping.each {source, dest ->
-
-            if (Files.isDirectory(source)) {
+        workflowInputMapping.each { source, dest ->
+            if( Files.isDirectory(source) ) {
                 // Recursively copy directory and its contents
                 Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
                     @Override
@@ -117,7 +121,7 @@ class WrrocRenderer implements Renderer {
             } else {
                 try {
                     Files.createDirectories(dest.getParent())
-                    if (!Files.exists(dest))
+                    if( !Files.exists(dest) )
                         Files.copy(source, dest)
                 } catch (Exception e) {
                     println "workflowInput: Failed to copy $source to $dest: ${e.message}"
@@ -126,9 +130,8 @@ class WrrocRenderer implements Renderer {
         }
 
         // Copy workflow output files into RO-Crate
-        workflowOutputs.each {source, dest ->
-
-            if (Files.isDirectory(source)) {
+        workflowOutputs.each { source, dest ->
+            if( Files.isDirectory(source) ) {
                 // Recursively copy directory and its contents
                 Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
                     @Override
@@ -157,44 +160,30 @@ class WrrocRenderer implements Renderer {
         }
 
         // get workflow config and store it in crate
-        Path configFilePath = crateRootDir.resolve("nextflow.config")
-        FileWriter configFileWriter = new FileWriter(configFilePath.toString())
+        final configFilePath = crateRootDir.resolve("nextflow.config")
+        final configFileWriter = new FileWriter(configFilePath.toString())
         configMap.toConfigObject().writeTo(configFileWriter)
 
         // get workflow README file and store it in crate
-        boolean readmeExists = false
-        List<String> readmeFiles = ["README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README"]
-        Path readmeFilePath = null
-        String readmeFileName = null
-        String readmeFileExtension = null
-        String readmeFileEncoding = null
+        Map readmeFile = null
 
-        for (String fileName : readmeFiles) {
-            Path potentialReadmePath = projectDir.resolve(fileName)
-            if (Files.exists(potentialReadmePath)) {
-                readmeExists = true
-                readmeFilePath = potentialReadmePath
-                readmeFileName = fileName
-                if (FilenameUtils.getExtension(fileName).equals("md"))
-                    readmeFileEncoding = "text/markdown"
-                else
-                    readmeFileEncoding = "text/plain"
-                break
-            }
-        }
-        def readmeFile = null
+        for( final fileName : README_FILENAMES ) {
+            final readmeFilePath = projectDir.resolve(fileName)
+            if( !Files.exists(readmeFilePath) )
+                continue
 
-        // Copy the README file into RO-Crate if it exists
-        if (readmeExists) {
-            Files.copy(readmeFilePath, crateRootDir.resolve(readmeFileName), StandardCopyOption.REPLACE_EXISTING)
-            readmeFile = 
-                [
-                    "@id"           : readmeFileName,
-                    "@type"         : "File",
-                    "name"          : readmeFileName,
-                    "description"   : "This is the README file of the workflow.",
-                    "encodingFormat": readmeFileEncoding
-                ]
+            final encoding = FilenameUtils.getExtension(fileName).equals("md")
+                ? "text/markdown"
+                : "text/plain"
+            readmeFile = [
+                "@id"           : fileName,
+                "@type"         : "File",
+                "name"          : fileName,
+                "description"   : "This is the README file of the workflow.",
+                "encodingFormat": encoding
+            ]
+            Files.copy(readmeFilePath, crateRootDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+            break
         }
 
         // get workflow metadata
@@ -209,7 +198,7 @@ class WrrocRenderer implements Renderer {
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = nextflowMeta.version.toString()
-        final wrrocParams = session.config.prov["formats"]["wrroc"] as Map
+        final wrrocParams = session.config.navigate('prov.formats.wrroc', [:]) as Map
 
         // Copy workflow into crate directory
         Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
@@ -217,9 +206,8 @@ class WrrocRenderer implements Renderer {
         // Copy nextflow_schema_json into crate if it exists
         final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
         // TODO Add to crate metadata
-        if (Files.exists(schemaFile))
+        if( Files.exists(schemaFile) )
             Files.copy(schemaFile, crateRootDir.resolve(schemaFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
-
 
         // create manifest
         final softwareApplicationId = UUID.randomUUID()
@@ -229,31 +217,14 @@ class WrrocRenderer implements Renderer {
         agent = parseAgentInfo(wrrocParams)
         organization = parseOrganizationInfo(wrrocParams)
         publisherID = getPublisherID(wrrocParams, agent, organization)
-        if(organization)
+        if( organization )
             agent.put("affiliation", ["@id": organization.get("@id")])
-        //license = parseLicenseInfo(wrrocParams)
-
 
         // license information
-        boolean licenseURLvalid = false
-        String licenseString = null;
-        URI licenseURL = null
-        Map license = null
-        if (wrrocParams.containsKey("license")) {
-            licenseString = wrrocParams.get("license")
-            try {
-                licenseURL = new URL(licenseString).toURI();
-                licenseURLvalid = true
-
-                // Entity for license URL
-                license = [
-                    "@id"  : licenseURL.toString(),
-                    "@type": "CreativeWork"
-                ]
-            } catch (Exception e) {
-                licenseURLvalid = false
-            }
-        }
+        final license = [
+            "@id"  : manifest.license,
+            "@type": "CreativeWork"
+        ]
 
         final formalParameters = params
             .collect { name, value ->
@@ -302,7 +273,6 @@ class WrrocRenderer implements Renderer {
 
         // Combine both, inputFiles and outputFiles into one list. Remove duplicates that occur when an intermediate
         // file is output of a task and input of another task.
-        //Map<String, LinkedHashMap<String, String>> combinedInputOutputMap = [:]
         Map combinedInputOutputMap = [:]
 
         inputFiles.each { entry ->
@@ -328,7 +298,7 @@ class WrrocRenderer implements Renderer {
         // Maps used for finding tasks/CreateActions corresponding to a Nextflow process
         Map<String, List> processToTasks = [:].withDefault { [] }
 
-        def createActions = tasks
+        final createActions = tasks
             .collect { task ->
                 List<String> resultFileIDs = []
 
@@ -529,7 +499,7 @@ class WrrocRenderer implements Renderer {
                     "hasPart"    : [
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
-                        readmeExists ? ["@id": readmeFile.get("@id")] : null,
+                        readmeFile ? ["@id": readmeFile["@id"]] : null,
                         *uniqueInputOutputFiles.collect(file -> ["@id": file["@id"]])
                     ].findAll { it != null },
                     "mainEntity" : ["@id": metadata.projectName],
@@ -537,7 +507,7 @@ class WrrocRenderer implements Renderer {
                         ["@id": "#${session.uniqueId}"],
                         *createActions.collect(createAction -> ["@id": createAction["@id"]])
                     ],
-                    "license"    : licenseURLvalid ? ["@id": licenseURL.toString()] : licenseString
+                    "license"    : license
                 ].findAll { it.value != null },
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
@@ -672,7 +642,7 @@ class WrrocRenderer implements Renderer {
         return intermediateInputFiles
     }
 
-    def Map<Path, Path> getIntermediateOutputFiles(Set<TaskRun> tasks, Map<Path, Path> workflowOutputs) {
+    Map<Path, Path> getIntermediateOutputFiles(Set<TaskRun> tasks, Map<Path, Path> workflowOutputs) {
 
         List<Path> intermediateOutputFilesList = []
         Map<Path, Path> intermediateOutputFilesMap = [:]
@@ -716,7 +686,7 @@ class WrrocRenderer implements Renderer {
      * @param paths Input file paths on the file system
      * @return      Map of input file paths into the RO-Crate
      */
-    def Map<Path, Path> getWorkflowInputMapping(Set<Path> paths) {
+    Map<Path, Path> getWorkflowInputMapping(Set<Path> paths) {
 
         // The resulting mapping
         Map<Path, Path> workflowInputMapping = [:]
@@ -766,8 +736,8 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing agent via '@id'. 'orcid' and 'name'
      */
-    def LinkedHashMap parseAgentInfo(Map params) {
-        final LinkedHashMap agent = new LinkedHashMap()
+    Map parseAgentInfo(Map params) {
+        final agent = [:]
 
         if (! params.containsKey("agent"))
             return null
@@ -785,7 +755,6 @@ class WrrocRenderer implements Renderer {
             String contactPointID = parseContactPointInfo(agentMap)
             if(contactPointID)
                 agent.put("contactPoint", ["@id": contactPointID ])
-
         }
 
         return agent
@@ -798,8 +767,8 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Map describing organization via '@id'. 'orcid' and 'name'
      */
-    def LinkedHashMap parseOrganizationInfo(Map params) {
-        final LinkedHashMap org = new LinkedHashMap()
+    Map parseOrganizationInfo(Map params) {
+        final org = [:]
 
         if (! params.containsKey("organization"))
             return null
@@ -828,10 +797,10 @@ class WrrocRenderer implements Renderer {
      * @param params Map describing an agent or organization
      * @return       ID of the contactPoint
      */
-    def String parseContactPointInfo(Map map) {
+    String parseContactPointInfo(Map map) {
 
         String contactPointID = ""
-        final LinkedHashMap contactPoint = new LinkedHashMap()
+        final contactPoint = [:]
 
         // Prefer email for the contact point ID
         if(map.containsKey("email"))
@@ -867,7 +836,7 @@ class WrrocRenderer implements Renderer {
      * @param params Nextflow parameters
      * @return       Publisher ID
      */
-    static def String getPublisherID(Map params, Map agent, Map organization) {
+    static String getPublisherID(Map params, Map agent, Map organization) {
 
         if (! params.containsKey("publisher"))
             return null
@@ -906,8 +875,7 @@ class WrrocRenderer implements Renderer {
             }
 
         return null
-        }
-
+    }
 
     /**
      * Check if a groovy object contains nested structures, e.g. will not be flattened when serialized as JSON
@@ -915,7 +883,7 @@ class WrrocRenderer implements Renderer {
      * @param obj The object to be checked
      * @return    true if the object contains nested structures
      */
-    static def boolean isNested(Object obj) {
+    static boolean isNested(Object obj) {
         return (obj instanceof Map || obj instanceof List)
     }
 
@@ -925,7 +893,7 @@ class WrrocRenderer implements Renderer {
      * @param path The path to be checked
      * @return type Either "File" or "Directory"
      */
-    static def String getType(Path path) {
+    static String getType(Path path) {
         String type = "File"
 
         if(path.isDirectory())
@@ -940,17 +908,16 @@ class WrrocRenderer implements Renderer {
      * @param object An object that may be a file
      * @return the MIME type of the object or null, if it's not a file.
      */
-    static def String getEncodingFormat(Object object) {
+    static String getEncodingFormat(Object object) {
 
         // Check if the object is a string and convert it to a Path
         if (object instanceof String) {
-            Path path = Paths.get((String) object);
+            Path path = Paths.get((String) object)
             return getEncodingFormat(path, null)
         } else {
             return null
         }
     }
-
 
     /**
      * Get the encodingFormat of a file as MIME Type.
@@ -962,7 +929,7 @@ class WrrocRenderer implements Renderer {
      * @param target Path to file
      * @return the MIME type of the file or null, if it's not a file.
      */
-    static def String getEncodingFormat(Path source, Path target) {
+    static String getEncodingFormat(Path source, Path target) {
         String mime = null
 
         if(source && source.exists() && source.isFile())
@@ -989,4 +956,5 @@ class WrrocRenderer implements Renderer {
 
         return mime
     }
+
 }
