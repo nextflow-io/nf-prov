@@ -36,13 +36,14 @@ class ProvObserverFactory implements TraceObserverFactory {
 
     @Override
     Collection<TraceObserver> create(Session session) {
-        [ createProvObserver(session.config) ]
+        final observer = createProvObserver(session.config)
+        observer ? [ observer ] : []
     }
 
     protected TraceObserver createProvObserver(Map config) {
         final enabled = config.navigate('prov.enabled', true) as Boolean
         if( !enabled )
-            return
+            return null
 
         final format = config.navigate('prov.format') as String
         final file = config.navigate('prov.file', 'manifest.json') as String
@@ -55,8 +56,10 @@ class ProvObserverFactory implements TraceObserverFactory {
 
         formats = config.navigate('prov.formats', formats) as Map
 
-        if( !formats )
-            throw new AbortOperationException("Config setting `prov.formats` is required to specify provenance output formats")
+        if( !formats ) {
+            log.warn "Config setting `prov.formats` is not defined, no provenance reports will be produced"
+            return null
+        }
 
         final patterns = config.navigate('prov.patterns', []) as List<String>
         new ProvObserver(formats, patterns)

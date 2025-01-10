@@ -41,7 +41,7 @@ class DagRenderer implements Renderer {
     private PathNormalizer normalizer
 
     DagRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)
@@ -64,8 +64,8 @@ class DagRenderer implements Renderer {
     }
 
     private Map<TaskRun,Vertex> getVertices(Set<TaskRun> tasks) {
-        def result = [:]
-        for( def task : tasks ) {
+        Map<TaskRun,Vertex> result = [:]
+        for( final task : tasks ) {
             final inputs = task.getInputFilesMap()
             final outputs = ProvHelper.getTaskOutputs(task)
 
@@ -106,11 +106,11 @@ class DagRenderer implements Renderer {
         final taskTree = getTaskTree(dag.vertices)
 
         // render diagram
-        def lines = [] as List<String>
+        List<String> lines = []
         lines << "flowchart TD"
 
         // render workflow inputs
-        final inputs = [:] as Map<Path,String>
+        Map<Path,String> inputs = [:]
 
         lines << "    subgraph \" \""
 
@@ -154,7 +154,7 @@ class DagRenderer implements Renderer {
         }
 
         // render task outputs
-        final outputs = [:] as Map<Path,String>
+        Map<Path,String> outputs = [:]
 
         dag.vertices.each { task, vertex ->
             vertex.outputs.each { path ->
@@ -184,11 +184,11 @@ class DagRenderer implements Renderer {
      * @param vertices
      */
     private Map getTaskTree(Map<TaskRun,Vertex> vertices) {
-        def taskTree = [:]
+        final taskTree = [:]
 
-        for( def entry : vertices ) {
-            def task = entry.key
-            def vertex = entry.value
+        for( final entry : vertices ) {
+            final task = entry.key
+            final vertex = entry.value
 
             // infer subgraph keys from fully qualified process name
             final result = getSubgraphKeys(task.processor.name)
@@ -200,7 +200,7 @@ class DagRenderer implements Renderer {
 
             // navigate to given subgraph
             def subgraph = taskTree
-            for( def key : keys ) {
+            for( final key : keys ) {
                 if( key !in subgraph )
                     subgraph[key] = [:]
                 subgraph = subgraph[key]

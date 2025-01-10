@@ -37,7 +37,7 @@ class LegacyRenderer implements Renderer {
     private boolean overwrite
 
     LegacyRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)
@@ -71,6 +71,7 @@ class LegacyRenderer implements Renderer {
             'name': task.name,
             'cached': task.cached,
             'process': task.processor.name,
+            'script': task.script,
             'inputs': task.inputs.findResults { inParam, object -> 
                 def inputMap = [ 
                     'name': inParam.getName(),

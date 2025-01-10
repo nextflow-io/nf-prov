@@ -1,10 +1,12 @@
 # nf-prov
 
-Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Objects](https://biocomputeobject.org/)!
+Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Object](https://biocomputeobject.org/)!
 
 ## Getting Started
 
 The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
+
+*New in version 1.3.0: requires Nextflow 24.10.0 or later.*
 
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
@@ -38,11 +40,13 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.formats`
 
+*New in version 1.2.0*
+
 Configuration scope for the desired output formats. The following formats are available:
 
 - `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
 
-  Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.
+  *New in version 1.3.0*: additional "pass-through" options are available for BCO fields that can't be inferred from the pipeline. See [BCO.md](./BCO.md) for more information.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
@@ -80,7 +84,7 @@ Run the following commands to build and test the nf-prov Nextflow plugin. Refer 
 # git checkout <branch>
 
 # Create an empty folder for nf-prov and nextflow repos
-git clone --depth 1 https://github.com/nextflow-io/nextflow ../nextflow
+git clone --depth 1 -b STABLE-23.10.x https://github.com/nextflow-io/nextflow ../nextflow
 
 # Prepare the nextflow repo
 cd ../nextflow && ./gradlew compile exportClasspath && cd -
