@@ -51,13 +51,7 @@ class WrrocRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
-    // The final RO-Crate directory
-    private Path createDir
-    // Nextflow work directory
-    private Path workdir
-    // Nextflow pipeline directory (contains main.nf, assets, etc.)
-    private Path projectDir
-    // List of contactPoints (people, organizations) to be added to ro-crate-metadata.json
+    // List of contact points (people, organizations) to be added
     private List<Map> contactPoints = []
 
     WrrocRenderer(Map opts) {
@@ -75,9 +69,8 @@ class WrrocRenderer implements Renderer {
 
         // get workflow metadata
         final metadata = session.workflowMetadata
-        this.createDir = path.getParent()
-        this.workdir = session.workDir
-        this.projectDir = metadata.projectDir
+        final crateDir = path.getParent()
+        final projectDir = metadata.projectDir
         this.normalizer = new PathNormalizer(metadata)
 
         final manifest = metadata.manifest
@@ -99,7 +92,7 @@ class WrrocRenderer implements Renderer {
 
         // warn about any output files outside of the crate directory
         workflowOutputs.each { source, target ->
-            if( !target.startsWith(createDir) )
+            if( !target.startsWith(crateDir) )
                 println "Workflow output file $target is outside of the RO-crate directory"
         }
 
@@ -122,7 +115,7 @@ class WrrocRenderer implements Renderer {
             if( !Files.exists(readmePath) )
                 continue
 
-            Files.copy(readmePath, createDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+            Files.copy(readmePath, crateDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
 
             datasetParts.add([
                 "@id"           : fileName,
@@ -139,7 +132,7 @@ class WrrocRenderer implements Renderer {
         if( Files.exists(schemaPath) ) {
             final fileName = schemaPath.name
 
-            Files.copy(schemaPath, createDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+            Files.copy(schemaPath, crateDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
             datasetParts.add([
                 "@id"           : fileName,
                 "@type"         : "File",
@@ -150,7 +143,7 @@ class WrrocRenderer implements Renderer {
         }
 
         // -- resolved config
-        final configPath = createDir.resolve("nextflow.config")
+        final configPath = crateDir.resolve("nextflow.config")
         configPath.text = ConfigHelper.toCanonicalString(session.config, true)
 
         datasetParts.add([
@@ -220,7 +213,7 @@ class WrrocRenderer implements Renderer {
         final outputFiles = workflowOutputs
             .collect { source, target ->
                 withoutNulls([
-                    "@id"           : createDir.relativize(target).toString(),
+                    "@id"           : crateDir.relativize(target).toString(),
                     "@type"         : getType(target),
                     "name"          : target.name,
                     "description"   : null,
@@ -347,7 +340,7 @@ class WrrocRenderer implements Renderer {
                     "name"        : "publish",
                     "instrument"  : ["@id": softwareApplicationId],
                     "object"      : ["@id": normalizePath(source)],
-                    "result"      : ["@id": createDir.relativize(target).toString()],
+                    "result"      : ["@id": crateDir.relativize(target).toString()],
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ]
             }
