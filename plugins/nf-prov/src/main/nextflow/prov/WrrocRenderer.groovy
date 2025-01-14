@@ -27,6 +27,7 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
+import nextflow.script.ProcessDef
 import nextflow.script.ScriptMeta
 import nextflow.util.ConfigHelper
 import org.apache.commons.io.FilenameUtils
@@ -123,9 +124,6 @@ class WrrocRenderer implements Renderer {
             break
         }
 
-        // Copy workflow into crate directory
-        Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
-
         // Copy nextflow_schema_json into crate if it exists
         final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
         // TODO Add to crate metadata
@@ -133,8 +131,8 @@ class WrrocRenderer implements Renderer {
             Files.copy(schemaFile, crateRootDir.resolve(schemaFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
 
         // create manifest
-        final softwareApplicationId = UUID.randomUUID()
-        final organizeActionId = UUID.randomUUID()
+        final softwareApplicationId = metadata.projectName + '#sa'
+        final organizeActionId = metadata.projectName + '#organize'
 
         // Process wrroc configuration options
         final agent = parseAgentInfo(wrrocParams)
@@ -229,7 +227,7 @@ class WrrocRenderer implements Renderer {
                     "name"        : task.getName(),
                     // TODO: get description from meta yaml or (future) docstring
                     //"description" : "",
-                    "instrument"  : ["@id": "#" + task.processor.ownerScript.toString()],
+                    "instrument"  : ["@id": getModuleId(task.processor)],
                     "agent"       : ["@id": agent.get("@id")],
                     "object"      : task.getInputFilesMap().collect { name, source ->
                         ["@id": normalizePath(source)]
@@ -254,64 +252,65 @@ class WrrocRenderer implements Renderer {
                     "@id"         : "publish#" + normalizePath(source),
                     "@type"       : "CreateAction",
                     "name"        : "publish",
-                    "instrument"  : ["@id": "#${softwareApplicationId}"],
+                    "instrument"  : ["@id": softwareApplicationId],
                     "object"      : ["@id": normalizePath(source)],
                     "result"      : ["@id": crateRootDir.relativize(target).toString()],
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ]
             }
 
-        final processes = tasks
+        final taskProcessors = tasks
             .collect { task -> task.processor }
             .unique()
 
-        final workflowSofwareApplications = processes
+        final processDefs = taskProcessors
+            .collect { process -> ScriptMeta.get(process.getOwnerScript()) }
+            .unique()
+            .collectMany { meta ->
+                meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef }
+            } as List<ProcessDef>
+
+        final moduleSoftwareApplications = processDefs
             .collect() { process ->
                 final metaYaml = readMetaYaml(process)
                 if (metaYaml == null) {
                     return [
-                        "@id"    : "#" + process.ownerScript.toString(),
+                        "@id"    : getModuleId(process),
                         "@type"  : "SoftwareApplication",
                         "name"   : process.getName(),
                     ]
                 }
 
                 final moduleName = metaYaml.get('name') as String
-                final toolNames = metaYaml.containsKey('tools')
-                    ? metaYaml.get('tools').collect { tool ->
-                        final entry = (tool as Map).entrySet().first()
-                        entry.key as String
-                    }
-                    : []
-
-                final parts = !toolNames.isEmpty()
-                    ? toolNames.collect { name -> ["@id": moduleName + '-' + name] }
-                    : null
+                final tools = metaYaml.getOrDefault('tools', []) as List
+                final parts = tools.collect { tool ->
+                    final entry = (tool as Map).entrySet().first()
+                    final toolName = entry.key as String
+                    ["@id": getToolId(moduleName, toolName)]
+                }
 
                 return [
-                    "@id"    : "#" + process.ownerScript.toString(),
+                    "@id"    : getModuleId(process),
                     "@type"  : "SoftwareApplication",
-                    "name"   : process.getName(),
-                    "hasPart": parts
+                    "name"   : process.getBaseName(),
+                    "hasPart": !parts.isEmpty() ? parts : null
                 ]
             }
 
-        final toolSoftwareApplications = processes
+        final toolSoftwareApplications = processDefs
             .collect { process -> readMetaYaml(process) }
             .findAll { metaYaml -> metaYaml != null }
             .collectMany { metaYaml ->
                 final moduleName = metaYaml.get('name') as String
-                final toolMaps = metaYaml.containsKey('tools')
-                    ? metaYaml.get('tools').collect { tool -> tool as Map }
-                    : []
+                final tools = metaYaml.getOrDefault('tools', []) as List
 
-                return toolMaps
-                    .collect { toolMap ->
-                        final entry = toolMap.entrySet().first()
+                return tools
+                    .collect { tool ->
+                        final entry = (tool as Map).entrySet().first()
                         final toolName = entry.key as String
                         final toolDescription = (entry.value as Map)?.get('description') as String
                         return [
-                            "@id"         : moduleName + '-' + toolName,
+                            "@id"         : getToolId(moduleName, toolName),
                             "@type"       : "SoftwareApplication",
                             "name"        : toolName,
                             "description" : entry.value?.toString() ?: ""
@@ -319,27 +318,27 @@ class WrrocRenderer implements Renderer {
                     }
             }
 
-        final howToSteps = processes
+        final howToSteps = taskProcessors
             .collect() { process ->
                 [
-                    "@id"        : metadata.projectName + "#main/" + process.getName(),
+                    "@id"        : getProcessHowToId(metadata.projectName, process),
                     "@type"      : "HowToStep",
-                    "workExample": ["@id": "#" + process.ownerScript.toString()],
-                    "position"   : process.getId().toString()
+                    "workExample": ["@id": getModuleId(process)],
+                    "position"   : process.getId()
                 ]
             }
 
-        final controlActions = processes
+        final controlActions = taskProcessors
             .collect() { process ->
                 final taskIds = tasks
                     .findAll { task -> task.processor == process }
                     .collect { task -> ["@id": "#" + task.hash.toString()] }
 
                 return [
-                    "@id"       : "#" + UUID.randomUUID(),
+                    "@id"       : getProcessControlId(metadata.projectName, process),
                     "@type"     : "ControlAction",
-                    "instrument": ["@id": "${metadata.projectName}#main/${process.getName()}"],
-                    "name"      : "orchestrate " + "${metadata.projectName}#main/${process.getName()}",
+                    "instrument": ["@id": getProcessHowToId(metadata.projectName, process)],
+                    "name"      : "Orchestrate process " + process.getName(),
                     "object"    : taskIds
                 ]
             }
@@ -376,7 +375,7 @@ class WrrocRenderer implements Renderer {
                         ["@id": "https://w3id.org/ro/wfrun/provenance/0.1"],
                         ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
                     ],
-                    "name"       : "Workflow run of " + manifest.getName() ?: metadata.projectName,
+                    "name"       : "Workflow run of " + manifest.name ?: metadata.projectName,
                     "description": manifest.description ?: null,
                     "hasPart"    : withoutNulls([
                         ["@id": metadata.projectName],
@@ -422,19 +421,20 @@ class WrrocRenderer implements Renderer {
                     "@id"                : metadata.projectName,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
                     "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
-                    "name"               : manifest.getName() ?: metadata.projectName,
-                    "description"        : manifest.getDescription() ?: null,
+                    "name"               : manifest.name ?: metadata.projectName,
+                    "description"        : manifest.description,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
-                    "creator"            : manifest.getAuthor() ?: null,
-                    "version"            : manifest.getVersion() ?: null,
-                    "license"            : manifest.getLicense() ?: null,
-                    "url"                : manifest.getHomePage() ?: null,
+                    "creator"            : manifest.author,
+                    "codeRepository"     : metadata.repository,
+                    "version"            : metadata.commitId,
+                    "license"            : manifest.license,
+                    "url"                : manifest.homePage,
                     "encodingFormat"     : "application/nextflow",
-                    "runtimePlatform"    : manifest.getNextflowVersion() ? "Nextflow " + manifest.getNextflowVersion() : null,
-                    "hasPart"            : asReferences(workflowSofwareApplications),
+                    "runtimePlatform"    : "Nextflow " + metadata.nextflow.version.toString(),
+                    "hasPart"            : asReferences(moduleSoftwareApplications),
                     "input"              : asReferences(formalParameters),
                     "output"             : [
-                        // TODO: id of FormalParameter for each output file
+                        // TODO: workflow output targets
                     ],
                     "step"               : asReferences(howToSteps),
                 ]),
@@ -446,20 +446,20 @@ class WrrocRenderer implements Renderer {
                     "url"       : "https://www.nextflow.io/",
                     "version"   : nextflowVersion
                 ],
-                *workflowSofwareApplications,
+                *moduleSoftwareApplications,
                 *toolSoftwareApplications,
                 *formalParameters,
                 [
-                    "@id"  : "#${softwareApplicationId}",
+                    "@id"  : softwareApplicationId,
                     "@type": "SoftwareApplication",
                     "name" : "Nextflow ${nextflowVersion}"
                 ],
                 *howToSteps,
                 [
-                    "@id"       : "#${organizeActionId}",
+                    "@id"       : organizeActionId,
                     "@type"     : "OrganizeAction",
                     "agent"     : ["@id": agent.get("@id")],
-                    "instrument": ["@id": "#${softwareApplicationId}"],
+                    "instrument": ["@id": softwareApplicationId],
                     "name"      : "Run of Nextflow ${nextflowVersion}",
                     "object"    : asReferences(controlActions),
                     "result"    : ["@id": "#${session.uniqueId}"],
@@ -633,13 +633,56 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Read meta.yaml (nf-core style) file for a given Nextflow process.
+     * Get the canonical name of a module script.
      *
-     * @param   TaskProcessor processor Nextflow process
-     * @return  Yaml as Map
+     * @param process
      */
-    static Map readMetaYaml(TaskProcessor processor) {
-        final metaFile = ScriptMeta.get(processor.getOwnerScript()).getModuleDir().resolve('meta.yml')
+    String getModuleId(ProcessDef process) {
+        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
+        return normalizePath(scriptPath)
+    }
+
+    /**
+     * Get the canonical name of a module script.
+     *
+     * @param process
+     */
+    String getModuleId(TaskProcessor process) {
+        final scriptPath = ScriptMeta.get(process.getOwnerScript()).getScriptPath().normalize()
+        return normalizePath(scriptPath)
+    }
+
+    /**
+     * Get the canonical name of a tool used by a module.
+     *
+     * @param moduleName
+     * @param toolName
+     */
+    String getToolId(String moduleName, String toolName) {
+        return "${moduleName}#${toolName}"
+    }
+
+    /**
+     * Get the canonical name of a process in the workflow DAG.
+     *
+     * @param projectName
+     * @param process
+     */
+    static String getProcessControlId(String projectName, TaskProcessor process) {
+        return "${projectName}#control#${process.getName()}"
+    }
+
+    static String getProcessHowToId(String projectName, TaskProcessor process) {
+        return "${projectName}#howto#${process.getName()}"
+    }
+
+    /**
+     * Get the nf-core meta.yml of a Nextflow module as a map.
+     *
+     * @param process
+     */
+    static Map readMetaYaml(ProcessDef process) {
+        final metaFile = ScriptMeta.get(process.getOwner()).getModuleDir().resolve('meta.yml')
         return Files.exists(metaFile)
             ? new Yaml().load(metaFile.text) as Map
             : null
