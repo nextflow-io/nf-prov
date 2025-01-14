@@ -221,7 +221,7 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final createActions = tasks
+        final taskCreateActions = tasks
             .collect { task ->
                 final createAction = [
                     "@id"         : "#" + task.hash.toString(),
