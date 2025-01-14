@@ -16,24 +16,17 @@
 
 package nextflow.prov
 
-import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.BasicFileAttributes
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
-import nextflow.config.ConfigMap
-import nextflow.file.FileHolder
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
-import nextflow.script.params.FileInParam
-import nextflow.script.params.FileOutParam
 import nextflow.script.ScriptMeta
 import org.apache.commons.io.FilenameUtils
 import org.yaml.snakeyaml.Yaml
@@ -75,92 +68,39 @@ class WrrocRenderer implements Renderer {
 
     @Override
     void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
-        final params = session.params
-        final configMap = session.config
-
-        // Set RO-Crate Root and workdir
-        this.crateRootDir = path.getParent()
-        this.workdir = session.getWorkDir()
-        this.projectDir = session.getWorkflowMetadata().getProjectDir()
-
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
 
-        // Add intermediate input files (produced by workflow tasks and consumed by other tasks)
-        workflowInputs.addAll(getIntermediateInputFiles(tasks, workflowInputs))
-        final workflowInputMapping = getWorkflowInputMapping(workflowInputs)
+        // get workflow metadata
+        final metadata = session.workflowMetadata
+        this.crateRootDir = path.getParent()
+        this.workdir = session.workDir
+        this.projectDir = metadata.projectDir
+        this.normalizer = new PathNormalizer(metadata)
 
-        // Add intermediate output files (produced by workflow tasks and consumed by other tasks)
-        workflowOutputs.putAll(getIntermediateOutputFiles(tasks, workflowOutputs))
+        final manifest = metadata.manifest
+        final nextflowMeta = metadata.nextflow
+        final scriptFile = metadata.getScriptFile()
 
-        // Copy workflow input files into RO-Crate
-        workflowInputMapping.each { source, dest ->
-            if( Files.isDirectory(source) ) {
-                // Recursively copy directory and its contents
-                Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
-                    @Override
-                    FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                        Path targetDir = dest.resolve(source.relativize(dir))
-                        Files.createDirectories(targetDir)
-                        return FileVisitResult.CONTINUE
-                    }
+        final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+        final dateStarted = formatter.format(metadata.start)
+        final dateCompleted = formatter.format(metadata.complete)
+        final nextflowVersion = nextflowMeta.version.toString()
+        final params = session.params
+        final wrrocParams = session.config.navigate('prov.formats.wrroc', [:]) as Map
 
-                    @Override
-                    FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                        Path targetFile = dest.resolve(source.relativize(file))
-                        if (!Files.exists(targetFile))
-                            Files.copy(file, targetFile)
-                        return FileVisitResult.CONTINUE
-                    }
-                })
-            } else {
-                try {
-                    Files.createDirectories(dest.getParent())
-                    if( !Files.exists(dest) )
-                        Files.copy(source, dest)
-                } catch (Exception e) {
-                    println "workflowInput: Failed to copy $source to $dest: ${e.message}"
-                }
-            }
+        // warn about any output files outside of the crate directory
+        workflowOutputs.each { source, target ->
+            if( !target.startsWith(crateRootDir) )
+                println "Workflow output file $target is outside of the RO-crate directory"
         }
 
-        // Copy workflow output files into RO-Crate
-        workflowOutputs.each { source, dest ->
-            if( Files.isDirectory(source) ) {
-                // Recursively copy directory and its contents
-                Files.walkFileTree(source, new SimpleFileVisitor<Path>() {
-                    @Override
-                    FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) throws IOException {
-                        Path targetDir = dest.resolve(source.relativize(dir))
-                        Files.createDirectories(targetDir)
-                        return FileVisitResult.CONTINUE
-                    }
+        // save resolved config
+        final configPath = crateRootDir.resolve("nextflow.config")
+        configPath.text = session.config.toConfigObject()
 
-                    @Override
-                    FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                        Path targetFile = dest.resolve(source.relativize(file))
-                        if (!Files.exists(targetFile))
-                            Files.copy(file, targetFile)
-                        return FileVisitResult.CONTINUE
-                    }
-                })
-            } else {
-                try {
-                    Files.createDirectories(dest.getParent())
-                    Files.copy(source, dest, StandardCopyOption.REPLACE_EXISTING)
-                } catch (Exception e) {
-                    println "workflowOutput Failed to copy $source to $dest: ${e.message}"
-                }
-            }
-        }
-
-        // get workflow config and store it in crate
-        final configFilePath = crateRootDir.resolve("nextflow.config")
-        final configFileWriter = new FileWriter(configFilePath.toString())
-        configMap.toConfigObject().writeTo(configFileWriter)
-
-        // get workflow README file and store it in crate
+        // save pipeline README file
         Map readmeFile = null
 
         for( final fileName : README_FILENAMES ) {
@@ -181,20 +121,6 @@ class WrrocRenderer implements Renderer {
             Files.copy(readmeFilePath, crateRootDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
             break
         }
-
-        // get workflow metadata
-        final metadata = session.workflowMetadata
-        this.normalizer = new PathNormalizer(metadata)
-
-        final manifest = metadata.manifest
-        final nextflowMeta = metadata.nextflow
-        final scriptFile = metadata.getScriptFile()
-
-        final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
-        final dateStarted = formatter.format(metadata.start)
-        final dateCompleted = formatter.format(metadata.complete)
-        final nextflowVersion = nextflowMeta.version.toString()
-        final wrrocParams = session.config.navigate('prov.formats.wrroc', [:]) as Map
 
         // Copy workflow into crate directory
         Files.copy(scriptFile, crateRootDir.resolve(scriptFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
@@ -240,110 +166,64 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final inputFiles = workflowInputMapping
-            .collect { source, target ->
+        final inputFiles = workflowInputs
+            .collect { source ->
                 withoutNulls([
-                    "@id"           : crateRootDir.relativize(target).toString(),
+                    "@id"           : normalizePath(source),
                     "@type"         : getType(source),
-                    "name"          : target.name,
+                    "name"          : source.name,
                     "description"   : null,
-                    "encodingFormat": getEncodingFormat(source, target),
+                    "encodingFormat": getEncodingFormat(source),
                     //"fileType": "whatever",
                     // TODO: apply if matching param is found
                     // "exampleOfWork": ["@id": paramId]
                 ])
             }
 
+        final intermediateFiles = tasks.collectMany { task ->
+            ProvHelper.getTaskOutputs(task).collect { target ->
+                withoutNulls([
+                    "@id"           : normalizePath(target),
+                    "@type"         : getType(target),
+                    "name"          : target.name,
+                    "encodingFormat": getEncodingFormat(target),
+                ])
+            }
+        }
+
         final outputFiles = workflowOutputs
             .collect { source, target ->
                 withoutNulls([
                     "@id"           : crateRootDir.relativize(target).toString(),
-                    "@type"         : getType(source),
+                    "@type"         : getType(target),
                     "name"          : target.name,
                     "description"   : null,
-                    "encodingFormat": getEncodingFormat(source, target),
+                    "encodingFormat": getEncodingFormat(target),
                     // TODO: create FormalParameter for each output file?
                     // "exampleOfWork": {"@id": "#reversed"}
                 ])
             }
 
-        // Combine both, inputFiles and outputFiles into one list. Remove duplicates that occur when an intermediate
-        // file is output of a task and input of another task.
-        final combinedInputOutputMap = [:]
-
-        inputFiles.each { entry ->
-            combinedInputOutputMap[entry['@id']] = entry
-        }
-        // Overwriting if 'id' already exists
-        outputFiles.each { entry ->
-            combinedInputOutputMap[entry['@id']] = entry
-        }
-        final uniqueInputOutputFiles = combinedInputOutputMap.values().toList()
-
         final propertyValues = params
             .collect { name, value ->
-                [
+                final normalized =
+                    (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
+                    : value instanceof CharSequence ? normalizePath(value.toString())
+                    : value
+
+                return [
                     "@id"          : "#${name}-pv",
                     "@type"        : "PropertyValue",
                     "exampleOfWork": ["@id": "#${name}"],
                     "name"         : name,
-                    "value"        : isNested(value) ? JsonOutput.toJson(value) : value
+                    "value"        : normalized
                 ]
             }
 
-        // Maps used for finding tasks/CreateActions corresponding to a Nextflow process
-        Map<String, List> processToTasks = [:].withDefault { [] }
-
         final createActions = tasks
             .collect { task ->
-                List<String> resultFileIDs = []
-
-                // Collect output files of the path
-                List<Path> outputFileList = []
-                for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
-
-                    if (taskOutputParam.getValue() instanceof Path) {
-                        outputFileList.add(taskOutputParam.getValue() as Path)
-                        continue
-                    }
-
-                    for (taskOutputFile in taskOutputParam.getValue()) {
-                        // Path to file in workdir
-                        outputFileList.add(Path.of(taskOutputFile.toString()))
-                    }
-                }
-
-                // Check if the output files have a mapping in workflowOutputs
-                for (outputFile in outputFileList) {
-                    if (workflowOutputs.containsKey(outputFile)) {
-                        resultFileIDs.add(crateRootDir.relativize(workflowOutputs.get(outputFile)).toString())
-                    } else {
-                        System.out.println("taskOutput not contained in workflowOutputs list: " + outputFile)
-                    }
-                }
-
-                List<String> objectFileIDs = []
-                for (taskInputParam in task.getInputsByType(FileInParam)) {
-                    for (taskInputFileHolder in taskInputParam.getValue()) {
-                        FileHolder holder = (FileHolder) taskInputFileHolder
-                        Path taskInputFilePath = holder.getStorePath()
-
-                        if (workflowInputs.contains(taskInputFilePath)) {
-                            // The mapping of input files to their path in the RO-Crate is only available for files we
-                            // expect (e.g. files in workdir and pipeline assets). Have to handle unexpected files ...
-                            try {
-                                objectFileIDs.add(crateRootDir.relativize(workflowInputMapping.get(taskInputFilePath)).toString())
-                            } catch(Exception e) {
-                                System.out.println("Unexpected input file: " + taskInputFilePath.toString())
-                            }
-                        } else {
-                            System.out.println("taskInput not contained in workflowInputs list: " + taskInputFilePath)
-                        }
-                    }
-                }
-
-                def createAction = [
-                    "@id"         : "#" + task.getHash().toString(),
+                final createAction = [
+                    "@id"         : "#" + task.hash.toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
                     // TODO: There is no description for Nextflow processes?
@@ -352,10 +232,14 @@ class WrrocRenderer implements Renderer {
                     //"startTime": "".
                     // TODO: Same as for startTime
                     //"endTime": "",
-                    "instrument"  : ["@id": "#" + task.getProcessor().ownerScript.toString()],
+                    "instrument"  : ["@id": "#" + task.processor.ownerScript.toString()],
                     "agent"       : ["@id": agent.get("@id")],
-                    "object"      : objectFileIDs.collect(id -> ["@id": id]),
-                    "result"      : resultFileIDs.collect(id -> ["@id": id]),
+                    "object"      : task.getInputFilesMap().collect { name, source ->
+                        ["@id": normalizePath(source)]
+                    },
+                    "result"      : ProvHelper.getTaskOutputs(task).collect { target ->
+                        ["@id": normalizePath(target)]
+                    },
                     "actionStatus": task.getExitStatus() == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
 
@@ -367,14 +251,11 @@ class WrrocRenderer implements Renderer {
                 return createAction
             }
 
-        final nextflowProcesses = tasks
-            .collect { task ->
-                processToTasks[task.getProcessor().getId().toString()].add("#${task.getHash().toString()}")
-                return task.getProcessor()
-            }
+        final processes = tasks
+            .collect { task -> task.processor }
             .unique()
 
-        final workflowSofwareApplications = nextflowProcesses
+        final workflowSofwareApplications = processes
             .collect() { process ->
                 final metaYaml = readMetaYaml(process)
                 if (metaYaml == null) {
@@ -405,7 +286,7 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final toolSoftwareApplications = nextflowProcesses
+        final toolSoftwareApplications = processes
             .collect { process -> readMetaYaml(process) }
             .findAll { metaYaml -> metaYaml != null }
             .collectMany { metaYaml ->
@@ -428,7 +309,7 @@ class WrrocRenderer implements Renderer {
                     }
             }
 
-        final howToSteps = nextflowProcesses
+        final howToSteps = processes
             .collect() { process ->
                 [
                     "@id"        : metadata.projectName + "#main/" + process.getName(),
@@ -438,14 +319,18 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final controlActions = nextflowProcesses
+        final controlActions = processes
             .collect() { process ->
-                [
+                final taskIds = tasks
+                    .findAll { task -> task.processor == process }
+                    .collect { task -> ["@id": "#" + task.hash.toString()] }
+
+                return [
                     "@id"       : "#" + UUID.randomUUID(),
                     "@type"     : "ControlAction",
                     "instrument": ["@id": "${metadata.projectName}#main/${process.getName()}"],
                     "name"      : "orchestrate " + "${metadata.projectName}#main/${process.getName()}",
-                    "object"    : asReferences(processToTasks[process.getId().toString()])
+                    "object"    : taskIds
                 ]
             }
 
@@ -487,7 +372,9 @@ class WrrocRenderer implements Renderer {
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
                         readmeFile ? ["@id": readmeFile["@id"]] : null,
-                        *asReferences(uniqueInputOutputFiles)
+                        *asReferences(inputFiles),
+                        *asReferences(intermediateFiles),
+                        *asReferences(outputFiles)
                     ]),
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
@@ -589,7 +476,9 @@ class WrrocRenderer implements Renderer {
                 *createActions,
                 configFile,
                 readmeFile,
-                *uniqueInputOutputFiles,
+                *inputFiles,
+                *intermediateFiles,
+                *outputFiles,
                 *propertyValues,
                 license,
             ])
@@ -597,109 +486,6 @@ class WrrocRenderer implements Renderer {
 
         // render manifest to JSON file
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(wrroc))
-    }
-
-    static Set<Path> getIntermediateInputFiles(Set<TaskRun> tasks, Set<Path> workflowInputs) {
-        Set<Path> intermediateInputFiles = []
-
-        tasks.collect { task ->
-            for (taskInputParam in task.getInputsByType(FileInParam)) {
-                for (taskInputFileHolder in taskInputParam.getValue()) {
-                    FileHolder holder = (FileHolder) taskInputFileHolder
-                    Path taskInputFilePath = holder.getStorePath()
-
-                    if (!workflowInputs.contains(taskInputFilePath)) {
-                        intermediateInputFiles.add(taskInputFilePath)
-                    }
-                }
-            }
-        }
-
-        return intermediateInputFiles
-    }
-
-    Map<Path, Path> getIntermediateOutputFiles(Set<TaskRun> tasks, Map<Path, Path> workflowOutputs) {
-
-        List<Path> intermediateOutputFilesList = []
-        Map<Path, Path> intermediateOutputFilesMap = [:]
-
-        tasks.each { task ->
-            for (taskOutputParam in task.getOutputsByType(FileOutParam)) {
-
-                // If the param is a Path, just add it to the intermediate list
-                if (taskOutputParam.getValue() instanceof Path) {
-                    intermediateOutputFilesList.add(taskOutputParam.getValue() as Path)
-                    continue
-                }
-
-                for (taskOutputFile in taskOutputParam.getValue()) {
-                    intermediateOutputFilesList.add(taskOutputFile as Path)
-                }
-            }
-        }
-
-        // Iterate over the file list and create the mapping
-        for (outputFile in intermediateOutputFilesList) {
-            if (!workflowOutputs.containsKey(outputFile)) {
-
-                // Find the relative path from workdir
-                Path relativePath = workdir.relativize(outputFile)
-
-                // Build the new path by combining crateRootDir and the relative part
-                Path outputFileInCrate = crateRootDir.resolve(workdir.fileName).resolve(relativePath)
-
-                Files.createDirectories(outputFileInCrate.parent)
-                intermediateOutputFilesMap.put(outputFile, outputFileInCrate)
-            }
-        }
-
-        return intermediateOutputFilesMap
-    }
-
-    /**
-     * Map input files from Nextflow workdir into the RO-Crate.
-     *
-     * @param paths Input file paths on the file system
-     * @return      Map of input file paths into the RO-Crate
-     */
-    Map<Path, Path> getWorkflowInputMapping(Set<Path> paths) {
-
-        // The resulting mapping
-        Map<Path, Path> workflowInputMapping = [:]
-
-        // Nextflow asset directory
-        Path assetDir = projectDir.resolve("assets")
-
-        // pipeline_info directory. Although located in the result directory, it is used as input for MultiQC
-        Path pipelineInfoDir = crateRootDir.resolve("pipeline_info")
-
-        paths.collect { inputPath ->
-
-            // Depending on where the input file is stored, use different Paths for the parent directory.
-            // We assume that an input file is either stored in the workdir or in the pipeline's asset directory.
-            Path parentDir = null
-            if (inputPath.startsWith(workdir))
-                parentDir = workdir
-            else if (inputPath.startsWith(assetDir))
-                parentDir = assetDir
-            else if (inputPath.startsWith(pipelineInfoDir))
-                parentDir = pipelineInfoDir
-
-
-            // Ignore file with unkown (e.g. null) parentDir
-            if(parentDir) {
-                Path relativePath = parentDir.relativize(inputPath)
-                Path outputFileInCrate = crateRootDir.resolve(parentDir.fileName).resolve(relativePath)
-                workflowInputMapping.put(inputPath, outputFileInCrate)
-            } else {
-                // All other files are simple copied into the crate with their absolute path into the crate root
-                Path relativePath = Path.of(inputPath.toString().substring(1))
-                Path outputFileInCrate = crateRootDir.resolve(relativePath)
-                workflowInputMapping.put(inputPath, outputFileInCrate)
-            }
-        }
-
-        return workflowInputMapping
     }
 
     static String getDatePublished() {
@@ -848,16 +634,6 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Check if a groovy object contains nested structures, e.g. will not be flattened when serialized as JSON
-     *
-     * @param obj The object to be checked
-     * @return    true if the object contains nested structures
-     */
-    static boolean isNested(Object obj) {
-        return (obj instanceof Map || obj instanceof List)
-    }
-
-    /**
      * Check if a Path is a file or a directory and return corresponding "@type"
      *
      * @param path The path to be checked
@@ -872,53 +648,38 @@ class WrrocRenderer implements Renderer {
     /**
      * Get the encodingFormat of a file as MIME Type.
      *
-     * @param object An object that may be a file
-     * @return the MIME type of the object or null, if it's not a file.
+     * @param value A value that may be a file
+     * @return the MIME type of the value, or null if it's not a file.
      */
-    static String getEncodingFormat(Object object) {
+    static String getEncodingFormat(Object value) {
 
-        // Check if the object is a string and convert it to a Path
-        return object instanceof String
-            ? getEncodingFormat(Path.of(object), null)
+        return value instanceof String
+            ? getEncodingFormat(Path.of(value))
             : null
     }
 
     /**
      * Get the encodingFormat of a file as MIME Type.
-     * A file can exist at two places. At the source where Nextflow or the user stored the file,
-     * or in the RO-Crate (i.e. target) location. The method takes both locations as arguments, if one
-     * of the locations does not exist any more.
      *
      * @param source Path to file
-     * @param target Path to file
-     * @return the MIME type of the file or null, if it's not a file.
+     * @return the MIME type of the file, or null if it's not a file.
      */
-    static String getEncodingFormat(Path source, Path target) {
-        String mime = null
+    static String getEncodingFormat(Path source) {
+        if( !(source && source.exists() && source.isFile()) )
+            return null
 
-        if(source && source.exists() && source.isFile())
-            mime = Files.probeContentType(source) ?: null
-        else if(target && target.exists() && target.isFile())
-            mime = Files.probeContentType(target) ?: null
-        else {
+        String mime = Files.probeContentType(source)
+        if( mime )
             return mime
-        }
 
         // It seems that YAML has a media type only since beginning of 2024
         // Set this by hand if this is run on older systems:
         // https://httptoolkit.com/blog/yaml-media-type-rfc/
-         if(!mime) {
-             String extension = null
-             if(source)
-                 extension = FilenameUtils.getExtension(source.toString())
-             else if(target)
-                 extension = FilenameUtils.getExtension(target.toString())
+        final extension = FilenameUtils.getExtension(source.toString())
+        if( ["yml", "yaml"].contains(extension) )
+            return "application/yaml"
 
-             if(["yml", "yaml"].contains(extension))
-                mime = "application/yaml"
-         }
-
-        return mime
+        return null
     }
 
     private static List asReferences(List values) {
