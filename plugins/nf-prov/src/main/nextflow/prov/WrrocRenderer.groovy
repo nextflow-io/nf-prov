@@ -18,12 +18,13 @@ package nextflow.prov
 
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
@@ -39,6 +40,7 @@ import org.yaml.snakeyaml.Yaml
  * @author Felix Bartusch <felix.bartusch@uni-tuebingen.de>
  * @author Famke Bäuerle <famke.baeuerle@qbic.uni-tuebingen.de>
  */
+@Slf4j
 @CompileStatic
 class WrrocRenderer implements Renderer {
 
@@ -84,8 +86,8 @@ class WrrocRenderer implements Renderer {
 
         // parse wrroc configuration
         final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
-        final agent = parseAgentInfo(wrrocOpts)
-        final organization = parseOrganizationInfo(wrrocOpts)
+        final agent = getAgentInfo(wrrocOpts)
+        final organization = getOrganizationInfo(wrrocOpts)
         final publisherId = getPublisherId(wrrocOpts, agent, organization)
         if( organization )
             agent["affiliation"] = ["@id": organization.get("@id")]
@@ -93,7 +95,7 @@ class WrrocRenderer implements Renderer {
         // warn about any output files outside of the crate directory
         workflowOutputs.each { source, target ->
             if( !target.startsWith(crateDir) )
-                println "Workflow output file $target is outside of the RO-crate directory"
+                log.warn "Workflow output file $target is outside of the RO-crate directory"
         }
 
         // create manifest
@@ -115,8 +117,7 @@ class WrrocRenderer implements Renderer {
             if( !Files.exists(readmePath) )
                 continue
 
-            Files.copy(readmePath, crateDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
-
+            readmePath.copyTo(crateDir.resolve(fileName))
             datasetParts.add([
                 "@id"           : fileName,
                 "@type"         : "File",
@@ -129,10 +130,11 @@ class WrrocRenderer implements Renderer {
 
         // -- parameter schema
         final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
+        Map<String,Map> paramSchema = [:]
         if( Files.exists(schemaPath) ) {
             final fileName = schemaPath.name
 
-            Files.copy(schemaPath, crateDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+            schemaPath.copyTo(crateDir.resolve(fileName))
             datasetParts.add([
                 "@id"           : fileName,
                 "@type"         : "File",
@@ -140,6 +142,7 @@ class WrrocRenderer implements Renderer {
                 "description"   : "The parameter schema of the workflow.",
                 "encodingFormat": "application/json"
             ])
+            paramSchema = getParameterSchema(schemaPath)
         }
 
         // -- resolved config
@@ -155,17 +158,24 @@ class WrrocRenderer implements Renderer {
         ])
 
         // -- pipeline parameters
-        // TODO: use parameter schema to populate additional fields
-        // TODO: use parameter schema to add file params to crate
         // TODO: formal parameters for workflow output targets
         final formalParameters = params
             .collect { name, value ->
-                withoutNulls([
+                final schema = paramSchema[name] ?: [:]
+                final type = getParameterType(name, value, schema)
+                final encoding = type == "File"
+                    ? getEncodingFormat(Path.of(value.toString()))
+                    : null
+
+                return withoutNulls([
                     "@id"           : getFormalParameterId(metadata.projectName, name),
                     "@type"         : "FormalParameter",
+                    "additionalType": type,
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
-                    "encodingFormat": getEncodingFormat(value),
+                    "encodingFormat": encoding,
                     "name"          : name,
+                    "defaultValue"  : schema.default,
+                    "description"   : schema.description,
                 ])
             }
 
@@ -185,6 +195,19 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
+        // -- copy input files from params to crate
+        params.each { name, value ->
+            final schema = paramSchema[name] ?: [:]
+            final type = getParameterType(name, value, schema)
+            if( type == "File" || type == "Directory" ) {
+                final source = Path.of(value.toString()).toAbsolutePath()
+                // don't copy params.outdir into itself...
+                if( source == crateDir )
+                    return
+                source.copyTo(crateDir)
+            }
+        }
+
         // -- input, output, and intermediate files
         final inputFiles = workflowInputs
             .collect { source ->
@@ -194,7 +217,6 @@ class WrrocRenderer implements Renderer {
                     "name"          : source.name,
                     "description"   : null,
                     "encodingFormat": getEncodingFormat(source),
-                    //"fileType": "whatever",
                     // TODO: apply if matching param is found
                     // "exampleOfWork": ["@id": paramId]
                 ])
@@ -238,7 +260,7 @@ class WrrocRenderer implements Renderer {
 
         final moduleSoftwareApplications = processDefs
             .collect() { process ->
-                final metaYaml = readMetaYaml(process)
+                final metaYaml = getModuleSchema(process)
                 if (metaYaml == null) {
                     return [
                         "@id"    : getModuleId(process),
@@ -264,7 +286,7 @@ class WrrocRenderer implements Renderer {
             }
 
         final toolSoftwareApplications = processDefs
-            .collect { process -> readMetaYaml(process) }
+            .collect { process -> getModuleSchema(process) }
             .findAll { metaYaml -> metaYaml != null }
             .collectMany { metaYaml ->
                 final moduleName = metaYaml.get('name') as String
@@ -501,7 +523,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param opts
      */
-    private Map parseAgentInfo(Map opts) {
+    private Map getAgentInfo(Map opts) {
         final result = [:]
 
         if( !opts.agent )
@@ -515,7 +537,7 @@ class WrrocRenderer implements Renderer {
 
         // Check for contact information
         if( agentOpts.email || agentOpts.phone ) {
-            final contactPointId = parseContactPointInfo(agentOpts)
+            final contactPointId = getContactPointInfo(agentOpts)
             if( contactPointId )
                 result.contactPoint = ["@id": contactPointId]
         }
@@ -528,7 +550,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param opts
      */
-    private Map parseOrganizationInfo(Map opts) {
+    private Map getOrganizationInfo(Map opts) {
         final result = [:]
 
         if( !opts.organization )
@@ -542,7 +564,7 @@ class WrrocRenderer implements Renderer {
 
         // Check for contact information
         if( orgOpts.email || orgOpts.phone ) {
-            final contactPointId = parseContactPointInfo(orgOpts)
+            final contactPointId = getContactPointInfo(orgOpts)
             if( contactPointId )
                 result.contactPoint = ["@id": contactPointId]
         }
@@ -555,7 +577,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param opts
      */
-    private String parseContactPointInfo(Map opts) {
+    private String getContactPointInfo(Map opts) {
         // Prefer email for the contact point ID
         String contactPointId = null
         if( opts.email )
@@ -608,6 +630,78 @@ class WrrocRenderer implements Renderer {
             return null
 
         return publisherId
+    }
+
+    /**
+     * Get the parameter schema of a pipeline as a map.
+     *
+     * @param path
+     */
+    private static Map<String,Map> getParameterSchema(Path path) {
+        final schema = new JsonSlurper().parseText(path.text) as Map
+
+        Map defs = null
+        if( schema['$defs'] )
+            defs = schema['$defs'] as Map
+        else if( schema['defs'] )
+            defs = schema['defs'] as Map
+        else if( schema['definitions'] )
+            defs = schema['definitions'] as Map
+
+        if( !defs )
+            return [:]
+
+        final schemaProps = schema.properties as Map ?: [:]
+        final defsProps = defs.values().collect { defn ->
+            (defn as Map).properties ?: [:]
+        } as List<Map>
+        final allProps = [schemaProps] + defsProps
+        final entries = allProps.collectMany { props ->
+            (props as Map).entrySet()
+        } as Map.Entry<String,Map>[]
+
+        return Map.ofEntries(entries)
+    }
+
+    /**
+     * Determine the type of a parameter based on its
+     * schema and/or runtime value.
+     *
+     * @param name
+     * @param value
+     * @param schema
+     */
+    private static String getParameterType(String name, Object value, Map schema) {
+        // infer from schema
+        if( schema ) {
+            final type = schema.type
+            final format = schema.format
+
+            switch( type ) {
+                case "boolean":
+                    return "Boolean"
+                case "integer":
+                case "number":
+                    return "Number"
+                case "string":
+                    return \
+                        format == "file-path" ? "File" :
+                        format == "directory-path" ? "Directory" :
+                        "Text"
+            }
+        }
+
+        // infer from runtime value
+        switch( value ) {
+            case Boolean:
+                return "Boolean"
+            case Number:
+                return "Number"
+            case CharSequence:
+                return "Text"
+            default:
+                return null
+        }
     }
 
     /**
@@ -669,7 +763,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param process
      */
-    private static Map readMetaYaml(ProcessDef process) {
+    private static Map getModuleSchema(ProcessDef process) {
         final metaFile = ScriptMeta.get(process.getOwner()).getModuleDir().resolve('meta.yml')
         return Files.exists(metaFile)
             ? new Yaml().load(metaFile.text) as Map
@@ -686,19 +780,6 @@ class WrrocRenderer implements Renderer {
         return path.isDirectory()
             ? "Directory"
             : "File"
-    }
-
-    /**
-     * Get the encodingFormat of a file as MIME Type.
-     *
-     * @param value A value that may be a file
-     * @return the MIME type of the value, or null if it's not a file.
-     */
-    private static String getEncodingFormat(Object value) {
-
-        return value instanceof String
-            ? getEncodingFormat(Path.of(value))
-            : null
     }
 
     /**
