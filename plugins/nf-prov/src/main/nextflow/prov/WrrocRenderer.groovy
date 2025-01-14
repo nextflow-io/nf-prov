@@ -88,7 +88,14 @@ class WrrocRenderer implements Renderer {
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = metadata.nextflow.version.toString()
         final params = session.params
-        final wrrocParams = session.config.navigate('prov.formats.wrroc', [:]) as Map
+
+        // parse wrroc configuration
+        final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
+        final agent = parseAgentInfo(wrrocOpts)
+        final organization = parseOrganizationInfo(wrrocOpts)
+        final publisherId = getPublisherId(wrrocOpts, agent, organization)
+        if( organization )
+            agent["affiliation"] = ["@id": organization.get("@id")]
 
         // warn about any output files outside of the crate directory
         workflowOutputs.each { source, target ->
@@ -153,13 +160,6 @@ class WrrocRenderer implements Renderer {
             "description"   : "The resolved Nextflow configuration for the workflow run.",
             "encodingFormat": "text/plain"
         ])
-
-        // Process wrroc configuration options
-        final agent = parseAgentInfo(wrrocParams)
-        final organization = parseOrganizationInfo(wrrocParams)
-        final publisherID = getPublisherID(wrrocParams, agent, organization)
-        if( organization )
-            agent.put("affiliation", ["@id": organization.get("@id")])
 
         // -- pipeline parameters
         // TODO: use parameter schema to populate additional fields
@@ -368,7 +368,7 @@ class WrrocRenderer implements Renderer {
                     "@id"        : "./",
                     "@type"      : "Dataset",
                     "author"     : ["@id": agent.get("@id")],
-                    "publisher"  : publisherID ? ["@id": publisherID] : null,
+                    "publisher"  : publisherId ? ["@id": publisherId] : null,
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
                         ["@id": "https://w3id.org/ro/wfrun/process/0.1"],
@@ -498,136 +498,122 @@ class WrrocRenderer implements Renderer {
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(wrroc))
     }
 
-    static String getDatePublished() {
+    private static String getDatePublished() {
         return LocalDateTime.now().format(DateTimeFormatter.ISO_DATE)
     }
 
     /**
-     * Parse information about agent running the workflow from parameters
+     * Parse information about the agent running the workflow.
      *
-     * @param params Nextflow parameters
-     * @return       Map describing agent via '@id'. 'orcid' and 'name'
+     * @param opts
      */
-    Map parseAgentInfo(Map params) {
-        final agent = [:]
+    private Map parseAgentInfo(Map opts) {
+        final result = [:]
 
-        if (! params.containsKey("agent"))
+        if( !opts.agent )
             return null
 
-        Map agentMap = params["agent"] as Map
-
-        agent.put("@id", agentMap.containsKey("orcid") ? agentMap.get("orcid") : "agent-1")
-        agent.put("@type", "Person")
-        if(agentMap.containsKey("name"))
-            agent.put("name", agentMap.get("name"))
+        final agentOpts = opts.agent as Map
+        result["@id"] = agentOpts.getOrDefault("orcid", "agent-1")
+        result["@type"] = "Person"
+        if( agentOpts.name )
+            result.name = agentOpts.name
 
         // Check for contact information
-        if(agentMap.containsKey("email") || agentMap.containsKey("phone")) {
-            // Add contact point to ro-crate-metadata.json
-            String contactPointID = parseContactPointInfo(agentMap)
-            if(contactPointID)
-                agent.put("contactPoint", ["@id": contactPointID ])
+        if( agentOpts.email || agentOpts.phone ) {
+            final contactPointId = parseContactPointInfo(agentOpts)
+            if( contactPointId )
+                result.contactPoint = ["@id": contactPointId]
         }
 
-        return agent
+        return result
     }
 
-
     /**
-     * Parse information about organization agent running the workflow belongs to.
+     * Parse information about the organization of the agent running the workflow.
      *
-     * @param params Nextflow parameters
-     * @return       Map describing organization via '@id'. 'orcid' and 'name'
+     * @param opts
      */
-    Map parseOrganizationInfo(Map params) {
-        final org = [:]
+    private Map parseOrganizationInfo(Map opts) {
+        final result = [:]
 
-        if (! params.containsKey("organization"))
+        if( !opts.organization )
             return null
 
-        Map orgMap = params["organization"] as Map
-        org.put("@id", orgMap.containsKey("ror") ? orgMap.get("ror") : "organization-1")
-        org.put("@type", "Organization")
-        if(orgMap.containsKey("name"))
-            org.put("name", orgMap.get("name"))
+        final orgOpts = opts.organization as Map
+        result["@id"] = orgOpts.getOrDefault("ror", "organization-1")
+        result["@type"] = "Organization"
+        if( orgOpts.name )
+            result.name = orgOpts.name
 
         // Check for contact information
-        if(orgMap.containsKey("email") || orgMap.containsKey("phone")) {
-            // Add contact point to ro-crate-metadata.json
-            String contactPointID = parseContactPointInfo(orgMap)
-            if(contactPointID)
-                org.put("contactPoint", ["@id": contactPointID ])
+        if( orgOpts.email || orgOpts.phone ) {
+            final contactPointId = parseContactPointInfo(orgOpts)
+            if( contactPointId )
+                result.contactPoint = ["@id": contactPointId]
         }
 
-        return org
+        return result
     }
 
-
     /**
-     * Parse information about contact point and add to contactPoints list.
+     * Parse a contact point and add it to the list of contact points.
      *
-     * @param params Map describing an agent or organization
-     * @return       ID of the contactPoint
+     * @param opts
      */
-    String parseContactPointInfo(Map map) {
-
-        String contactPointID = ""
-        final contactPoint = [:]
-
+    private String parseContactPointInfo(Map opts) {
         // Prefer email for the contact point ID
-        if(map.containsKey("email"))
-            contactPointID = "mailto:" + map.get("email")
-        else if(map.containsKey("phone"))
-            contactPointID = map.get("phone")
-        else
+        String contactPointId = null
+        if( opts.email )
+            contactPointId = "mailto:" + opts.email
+        else if( opts.phone )
+            contactPointId = opts.phone
+
+        if( !contactPointId )
             return null
 
-        contactPoint.put("@id", contactPointID)
-        contactPoint.put("@type", "ContactPoint")
-        if(map.containsKey("contactType"))
-            contactPoint.put("contactType", map.get("contactType"))
-        if(map.containsKey("email"))
-            contactPoint.put("email", map.get("email"))
-        if(map.containsKey("phone"))
-            contactPoint.put("phone", map.get("phone"))
-        if(map.containsKey("orcid"))
-            contactPoint.put("url", map.get("orcid"))
-        if(map.containsKey("rar"))
-            contactPoint.put("url", map.get("rar"))
+        final contactPoint = [:]
+        contactPoint["@id"] = contactPointId
+        contactPoint["@type"] = "ContactPoint"
+        if( opts.contactType )
+            contactPoint.contactType = opts.contactType
+        if( opts.email )
+            contactPoint.email = opts.email
+        if( opts.phone )
+            contactPoint.phone = opts.phone
+        if( opts.orcid )
+            contactPoint.url = opts.orcid
+        if( opts.rar )
+            contactPoint.url = opts.rar
 
         contactPoints.add(contactPoint)
-        return contactPointID
+        return contactPointId
     }
-
 
     /**
      * Parse information about the RO-Crate publisher.
      *
-     * @param params Nextflow parameters
-     * @return       Publisher ID
+     * @param opts
+     * @param agent
+     * @param organization
      */
-    static String getPublisherID(Map params, Map agent, Map organization) {
-
-        if (! params.containsKey("publisher"))
+    private static String getPublisherId(Map opts, Map agent, Map organization) {
+        if( !opts.publisher )
             return null
 
-        Map publisherMap = params["publisher"] as Map
-        if (! publisherMap.containsKey("id"))
+        final publisherOpts = opts.publisher as Map
+        if( !publisherOpts.containsKey("id") )
             return null
 
-        String publisherID = publisherMap.get("id")
-        String agentID = ""
-        String organizationID = ""
-        if (agent)
-            agentID = agent.get("@id")
-        if (organization)
-            organizationID = organization.get("@id")
+        final publisherId = publisherOpts.id
 
-        // Check if the publisher ID references either the organization or the agent
-        if (publisherID != agentID && publisherID != organizationID)
+        // Check if the publisher id references either the agent or the organization
+        final agentId = agent?["@id"]
+        final organizationId = organization?["@id"]
+        if( publisherId != agentId && publisherId != organizationId )
             return null
 
-        return publisherID
+        return publisherId
     }
 
     /**
@@ -635,7 +621,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param process
      */
-    String getModuleId(ProcessDef process) {
+    private String getModuleId(ProcessDef process) {
         final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
         return normalizePath(scriptPath)
     }
@@ -645,7 +631,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param process
      */
-    String getModuleId(TaskProcessor process) {
+    private String getModuleId(TaskProcessor process) {
         final scriptPath = ScriptMeta.get(process.getOwnerScript()).getScriptPath().normalize()
         return normalizePath(scriptPath)
     }
@@ -656,7 +642,7 @@ class WrrocRenderer implements Renderer {
      * @param moduleName
      * @param toolName
      */
-    String getToolId(String moduleName, String toolName) {
+    private static String getToolId(String moduleName, String toolName) {
         return "${moduleName}#${toolName}"
     }
 
@@ -666,11 +652,11 @@ class WrrocRenderer implements Renderer {
      * @param projectName
      * @param process
      */
-    static String getProcessControlId(String projectName, TaskProcessor process) {
+    private static String getProcessControlId(String projectName, TaskProcessor process) {
         return "${projectName}#control#${process.getName()}"
     }
 
-    static String getProcessHowToId(String projectName, TaskProcessor process) {
+    private static String getProcessHowToId(String projectName, TaskProcessor process) {
         return "${projectName}#howto#${process.getName()}"
     }
 
@@ -679,7 +665,7 @@ class WrrocRenderer implements Renderer {
      *
      * @param process
      */
-    static Map readMetaYaml(ProcessDef process) {
+    private static Map readMetaYaml(ProcessDef process) {
         final metaFile = ScriptMeta.get(process.getOwner()).getModuleDir().resolve('meta.yml')
         return Files.exists(metaFile)
             ? new Yaml().load(metaFile.text) as Map
@@ -692,7 +678,7 @@ class WrrocRenderer implements Renderer {
      * @param path The path to be checked
      * @return type Either "File" or "Directory"
      */
-    static String getType(Path path) {
+    private static String getType(Path path) {
         return path.isDirectory()
             ? "Directory"
             : "File"
@@ -704,7 +690,7 @@ class WrrocRenderer implements Renderer {
      * @param value A value that may be a file
      * @return the MIME type of the value, or null if it's not a file.
      */
-    static String getEncodingFormat(Object value) {
+    private static String getEncodingFormat(Object value) {
 
         return value instanceof String
             ? getEncodingFormat(Path.of(value))
@@ -717,7 +703,7 @@ class WrrocRenderer implements Renderer {
      * @param path Path to file
      * @return the MIME type of the file, or null if it's not a file.
      */
-    static String getEncodingFormat(Path path) {
+    private static String getEncodingFormat(Path path) {
         if( !(path && path.exists() && path.isFile()) )
             return null
 
