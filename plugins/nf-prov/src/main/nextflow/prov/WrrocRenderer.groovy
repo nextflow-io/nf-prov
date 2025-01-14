@@ -227,12 +227,8 @@ class WrrocRenderer implements Renderer {
                     "@id"         : "#" + task.hash.toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
-                    // TODO: There is no description for Nextflow processes?
+                    // TODO: get description from meta yaml or (future) docstring
                     //"description" : "",
-                    // TODO: task doesn't contain startTime information. TaskHandler does, but is not available to WrrocRenderer
-                    //"startTime": "".
-                    // TODO: Same as for startTime
-                    //"endTime": "",
                     "instrument"  : ["@id": "#" + task.processor.ownerScript.toString()],
                     "agent"       : ["@id": agent.get("@id")],
                     "object"      : task.getInputFilesMap().collect { name, source ->
@@ -250,6 +246,19 @@ class WrrocRenderer implements Renderer {
                 }
 
                 return createAction
+            }
+
+        final publishCreateActions = workflowOutputs
+            .collect { source, target ->
+                [
+                    "@id"         : "publish#" + normalizePath(source),
+                    "@type"       : "CreateAction",
+                    "name"        : "publish",
+                    "instrument"  : ["@id": "#${softwareApplicationId}"],
+                    "object"      : ["@id": normalizePath(source)],
+                    "result"      : ["@id": crateRootDir.relativize(target).toString()],
+                    "actionStatus": "http://schema.org/CompletedActionStatus"
+                ]
             }
 
         final processes = tasks
@@ -380,7 +389,8 @@ class WrrocRenderer implements Renderer {
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
-                        *asReferences(createActions)
+                        *asReferences(taskCreateActions),
+                        *asReferences(publishCreateActions)
                     ],
                     "license"    : license
                 ]),
@@ -474,7 +484,8 @@ class WrrocRenderer implements Renderer {
                 organization,
                 *contactPoints,
                 *controlActions,
-                *createActions,
+                *taskCreateActions,
+                *publishCreateActions,
                 configFile,
                 readmeFile,
                 *inputFiles,
