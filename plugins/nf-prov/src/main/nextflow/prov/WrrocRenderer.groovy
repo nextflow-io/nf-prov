@@ -19,7 +19,6 @@ package nextflow.prov
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
@@ -62,14 +61,11 @@ class WrrocRenderer implements Renderer {
     private Path workdir
     // Nextflow pipeline directory (contains main.nf, assets, etc.)
     private Path projectDir
-    private Map agent
-    private Map organization
     // List of contactPoints (people, organizations) to be added to ro-crate-metadata.json
     private List<Map> contactPoints = []
-    private String publisherID
 
     WrrocRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)
@@ -214,9 +210,9 @@ class WrrocRenderer implements Renderer {
         final organizeActionId = UUID.randomUUID()
 
         // Process wrroc configuration options
-        agent = parseAgentInfo(wrrocParams)
-        organization = parseOrganizationInfo(wrrocParams)
-        publisherID = getPublisherID(wrrocParams, agent, organization)
+        final agent = parseAgentInfo(wrrocParams)
+        final organization = parseOrganizationInfo(wrrocParams)
+        final publisherID = getPublisherID(wrrocParams, agent, organization)
         if( organization )
             agent.put("affiliation", ["@id": organization.get("@id")])
 
@@ -282,7 +278,7 @@ class WrrocRenderer implements Renderer {
         outputFiles.each { entry ->
             combinedInputOutputMap[entry['@id']] = entry
         }
-        List uniqueInputOutputFiles = combinedInputOutputMap.values().toList()
+        final uniqueInputOutputFiles = combinedInputOutputMap.values().toList()
 
         final propertyValues = params
             .collect { name, value ->
@@ -375,7 +371,8 @@ class WrrocRenderer implements Renderer {
             .collect { task ->
                 processToTasks[task.getProcessor().getId().toString()].add("#${task.getHash().toString()}")
                 return task.getProcessor()
-            }.unique()
+            }
+            .unique()
 
         final wfSofwareApplications = nextflowProcesses
             .collect() { process ->
@@ -436,7 +433,9 @@ class WrrocRenderer implements Renderer {
                 }
 
                 return softwareApplications
-            }.findAll { it != null }.flatten()
+            }
+            .findAll { it != null }
+            .flatten()
 
         final howToSteps = nextflowProcesses
             .collect() { process ->
@@ -461,14 +460,13 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final configFile =
-            [
-                "@id"           : "nextflow.config",
-                "@type"         : "File",
-                "name"          : "Effective Nextflow configuration",
-                "description"   : "This is the effective configuration during runtime compiled from all configuration sources.",
-                "encodingFormat": "text/plain"
-            ]
+        final configFile = [
+            "@id"           : "nextflow.config",
+            "@type"         : "File",
+            "name"          : "Effective Nextflow configuration",
+            "description"   : "This is the effective configuration during runtime compiled from all configuration sources.",
+            "encodingFormat": "text/plain"
+        ]
 
         final wrroc = [
             "@context": "https://w3id.org/ro/crate/1.1/context",
@@ -575,7 +573,6 @@ class WrrocRenderer implements Renderer {
                     "@type": "SoftwareApplication",
                     "name" : "Nextflow ${nextflowVersion}"
                 ],
-
                 *howToSteps,
                 [
                     "@id"       : "#${organizeActionId}",
@@ -606,8 +603,8 @@ class WrrocRenderer implements Renderer {
                         ["@id": file["@id"]]
                     )
                 ],
-                *[agent],
-                *[organization],
+                agent,
+                organization,
                 *contactPoints,
                 *controlActions,
                 *createActions,
@@ -820,8 +817,6 @@ class WrrocRenderer implements Renderer {
             contactPoint.put("phone", map.get("phone"))
         if(map.containsKey("orcid"))
             contactPoint.put("url", map.get("orcid"))
-        if(map.containsKey("orcid"))
-            contactPoint.put("url", map.get("orcid"))
         if(map.containsKey("rar"))
             contactPoint.put("url", map.get("rar"))
 
@@ -867,14 +862,10 @@ class WrrocRenderer implements Renderer {
      * @return  Yaml as Map
      */
     static Map readMetaYaml(TaskProcessor processor) {
-        Path metaFile = ScriptMeta.get(processor.getOwnerScript()).getModuleDir().resolve('meta.yml')
-
-        if (Files.exists(metaFile)) {
-            Yaml yaml = new Yaml()
-            return yaml.load(metaFile.text) as Map
-            }
-
-        return null
+        final metaFile = ScriptMeta.get(processor.getOwnerScript()).getModuleDir().resolve('meta.yml')
+        return Files.exists(metaFile)
+            ? new Yaml().load(metaFile.text) as Map
+            : null
     }
 
     /**
@@ -894,12 +885,9 @@ class WrrocRenderer implements Renderer {
      * @return type Either "File" or "Directory"
      */
     static String getType(Path path) {
-        String type = "File"
-
-        if(path.isDirectory())
-            type = "Directory"
-
-        return type
+        return path.isDirectory()
+            ? "Directory"
+            : "File"
     }
 
     /**
@@ -911,12 +899,9 @@ class WrrocRenderer implements Renderer {
     static String getEncodingFormat(Object object) {
 
         // Check if the object is a string and convert it to a Path
-        if (object instanceof String) {
-            Path path = Paths.get((String) object)
-            return getEncodingFormat(path, null)
-        } else {
-            return null
-        }
+        return object instanceof String
+            ? getEncodingFormat(Path.of(object), null)
+            : null
     }
 
     /**
