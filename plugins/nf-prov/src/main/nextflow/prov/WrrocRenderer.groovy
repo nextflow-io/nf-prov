@@ -157,10 +157,11 @@ class WrrocRenderer implements Renderer {
         // -- pipeline parameters
         // TODO: use parameter schema to populate additional fields
         // TODO: use parameter schema to add file params to crate
+        // TODO: formal parameters for workflow output targets
         final formalParameters = params
             .collect { name, value ->
                 withoutNulls([
-                    "@id"           : "#${name}",
+                    "@id"           : getFormalParameterId(metadata.projectName, name),
                     "@type"         : "FormalParameter",
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
                     "encodingFormat": getEncodingFormat(value),
@@ -176,9 +177,9 @@ class WrrocRenderer implements Renderer {
                     : value
 
                 return [
-                    "@id"          : "#${name}-pv",
+                    "@id"          : "#${name}",
                     "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": "#${name}"],
+                    "exampleOfWork": ["@id": getFormalParameterId(metadata.projectName, name)],
                     "name"         : name,
                     "value"        : normalized
                 ]
@@ -286,7 +287,7 @@ class WrrocRenderer implements Renderer {
         final howToSteps = taskProcessors
             .collect() { process ->
                 [
-                    "@id"        : getProcessHowToId(metadata.projectName, process),
+                    "@id"        : getProcessStepId(metadata.projectName, process),
                     "@type"      : "HowToStep",
                     "workExample": ["@id": getModuleId(process)],
                     "position"   : process.getId()
@@ -302,7 +303,7 @@ class WrrocRenderer implements Renderer {
                 return [
                     "@id"       : getProcessControlId(metadata.projectName, process),
                     "@type"     : "ControlAction",
-                    "instrument": ["@id": getProcessHowToId(metadata.projectName, process)],
+                    "instrument": ["@id": getProcessStepId(metadata.projectName, process)],
                     "name"      : "Orchestrate process " + process.getName(),
                     "object"    : taskIds
                 ]
@@ -468,8 +469,8 @@ class WrrocRenderer implements Renderer {
                     "endTime"   : dateCompleted,
                     "instrument": ["@id": metadata.projectName],
                     "object"    : [
+                        *asReferences(propertyValues),
                         *asReferences(inputFiles),
-                        *asReferences(propertyValues)
                     ],
                     "result"    : asReferences(outputFiles)
                 ],
@@ -480,10 +481,10 @@ class WrrocRenderer implements Renderer {
                 *taskCreateActions,
                 *publishCreateActions,
                 *datasetParts,
+                *propertyValues,
                 *inputFiles,
                 *intermediateFiles,
                 *outputFiles,
-                *propertyValues,
             ])
         ]
 
@@ -612,6 +613,16 @@ class WrrocRenderer implements Renderer {
     /**
      * Get the canonical name of a module script.
      *
+     * @param projectName
+     * @param name
+     */
+    private String getFormalParameterId(String projectName, String name) {
+        return "${projectName}#param#${name}"
+    }
+
+    /**
+     * Get the canonical name of a module script.
+     *
      * @param process
      */
     private String getModuleId(ProcessDef process) {
@@ -649,8 +660,8 @@ class WrrocRenderer implements Renderer {
         return "${projectName}#control#${process.getName()}"
     }
 
-    private static String getProcessHowToId(String projectName, TaskProcessor process) {
-        return "${projectName}#howto#${process.getName()}"
+    private static String getProcessStepId(String projectName, TaskProcessor process) {
+        return "${projectName}#step#${process.getName()}"
     }
 
     /**
