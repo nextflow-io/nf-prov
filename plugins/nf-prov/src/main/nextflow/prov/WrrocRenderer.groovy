@@ -224,7 +224,7 @@ class WrrocRenderer implements Renderer {
 
         final formalParameters = params
             .collect { name, value ->
-                [
+                withoutNulls([
                     "@id"           : "#${name}",
                     "@type"         : "FormalParameter",
                     // TODO: infer type from value at runtime
@@ -237,12 +237,12 @@ class WrrocRenderer implements Renderer {
                     // "workExample": ["@id": outputId],
                     "name"          : name,
                     // "valueRequired": "True"
-                ].findAll { it.value != null }
+                ])
             }
 
         final inputFiles = workflowInputMapping
             .collect { source, target ->
-                [
+                withoutNulls([
                     "@id"           : crateRootDir.relativize(target).toString(),
                     "@type"         : getType(source),
                     "name"          : target.name,
@@ -251,12 +251,12 @@ class WrrocRenderer implements Renderer {
                     //"fileType": "whatever",
                     // TODO: apply if matching param is found
                     // "exampleOfWork": ["@id": paramId]
-                ].findAll { it.value != null }
+                ])
             }
 
         final outputFiles = workflowOutputs
             .collect { source, target ->
-                [
+                withoutNulls([
                     "@id"           : crateRootDir.relativize(target).toString(),
                     "@type"         : getType(source),
                     "name"          : target.name,
@@ -264,12 +264,12 @@ class WrrocRenderer implements Renderer {
                     "encodingFormat": getEncodingFormat(source, target),
                     // TODO: create FormalParameter for each output file?
                     // "exampleOfWork": {"@id": "#reversed"}
-                ].findAll { it.value != null }
+                ])
             }
 
         // Combine both, inputFiles and outputFiles into one list. Remove duplicates that occur when an intermediate
         // file is output of a task and input of another task.
-        Map combinedInputOutputMap = [:]
+        final combinedInputOutputMap = [:]
 
         inputFiles.each { entry ->
             combinedInputOutputMap[entry['@id']] = entry
@@ -353,9 +353,9 @@ class WrrocRenderer implements Renderer {
                     // TODO: Same as for startTime
                     //"endTime": "",
                     "instrument"  : ["@id": "#" + task.getProcessor().ownerScript.toString()],
-                    "agent"       : ["@id": agent.get("@id").toString()],
-                    "object"      : objectFileIDs.collect(file -> ["@id": file]),
-                    "result"      : resultFileIDs.collect(file -> ["@id": file]),
+                    "agent"       : ["@id": agent.get("@id")],
+                    "object"      : objectFileIDs.collect(id -> ["@id": id]),
+                    "result"      : resultFileIDs.collect(id -> ["@id": id]),
                     "actionStatus": task.getExitStatus() == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
 
@@ -374,9 +374,9 @@ class WrrocRenderer implements Renderer {
             }
             .unique()
 
-        final wfSofwareApplications = nextflowProcesses
+        final workflowSofwareApplications = nextflowProcesses
             .collect() { process ->
-                def metaYaml = readMetaYaml(process)
+                final metaYaml = readMetaYaml(process)
                 if (metaYaml == null) {
                     return [
                         "@id"    : "#" + process.ownerScript.toString(),
@@ -384,58 +384,49 @@ class WrrocRenderer implements Renderer {
                         "name"   : process.getName(),
                     ]
                 }
-                
-                def moduleName = metaYaml.get('name') as String
-                def toolNames = []
-                
-                metaYaml.get('tools')?.each { tool ->
-                    def entry = (tool as Map).entrySet().first()
-                    def toolName = entry.key as String
-                    toolNames << toolName
-                }
-                
-                [
+
+                final moduleName = metaYaml.get('name') as String
+                final toolNames = metaYaml.containsKey('tools')
+                    ? metaYaml.get('tools').collect { tool ->
+                        final entry = (tool as Map).entrySet().first()
+                        entry.key as String
+                    }
+                    : []
+
+                final parts = !toolNames.isEmpty()
+                    ? toolNames.collect { name -> ["@id": moduleName + '-' + name] }
+                    : null
+
+                return [
                     "@id"    : "#" + process.ownerScript.toString(),
                     "@type"  : "SoftwareApplication",
                     "name"   : process.getName(),
-                    "hasPart": toolNames.isEmpty() ? null : toolNames.collect { name -> ["@id": moduleName + '-' + name] }
+                    "hasPart": parts
                 ]
             }
 
-        final perTool = nextflowProcesses
-            .collect() { process ->
-                def metaYaml = readMetaYaml(process)
-                if (metaYaml == null) {
-                    return null
-                }
+        final toolSoftwareApplications = nextflowProcesses
+            .collect { process -> readMetaYaml(process) }
+            .findAll { metaYaml -> metaYaml != null }
+            .collectMany { metaYaml ->
+                final moduleName = metaYaml.get('name') as String
+                final toolMaps = metaYaml.containsKey('tools')
+                    ? metaYaml.get('tools').collect { tool -> tool as Map }
+                    : []
 
-                def moduleName = metaYaml.get('name') as String
-                def listOfToolMaps = []
-                metaYaml.get('tools')?.each { tool -> listOfToolMaps.add(tool as Map) }
-
-                def softwareMaps = listOfToolMaps.collect { toolMap ->
-                    def entry = (toolMap as Map).entrySet().first()
-                    def toolName = entry.key as String
-                    def toolDescription = (entry.value as Map)?.get('description') as String
-                    [(toolName): toolDescription]
-                }
-
-                // Create a list of SoftwareApplication entries
-                def softwareApplications = softwareMaps.collect { softwareMap ->
-                    def entry = (softwareMap as Map).entrySet().first()
-                    def toolName = entry.key as String
-                    [
-                        "@id"         : moduleName + '-' + toolName,
-                        "@type"       : "SoftwareApplication",
-                        "name"        : toolName,
-                        "description" : entry.value?.toString() ?: ""
-                    ]
-                }
-
-                return softwareApplications
+                return toolMaps
+                    .collect { toolMap ->
+                        final entry = toolMap.entrySet().first()
+                        final toolName = entry.key as String
+                        final toolDescription = (entry.value as Map)?.get('description') as String
+                        return [
+                            "@id"         : moduleName + '-' + toolName,
+                            "@type"       : "SoftwareApplication",
+                            "name"        : toolName,
+                            "description" : entry.value?.toString() ?: ""
+                        ]
+                    }
             }
-            .findAll { it != null }
-            .flatten()
 
         final howToSteps = nextflowProcesses
             .collect() { process ->
@@ -454,9 +445,7 @@ class WrrocRenderer implements Renderer {
                     "@type"     : "ControlAction",
                     "instrument": ["@id": "${metadata.projectName}#main/${process.getName()}"],
                     "name"      : "orchestrate " + "${metadata.projectName}#main/${process.getName()}",
-                    "object"    : processToTasks[process.getId().toString()].collect({ taskID ->
-                        ["@id": taskID]
-                    })
+                    "object"    : asReferences(processToTasks[process.getId().toString()])
                 ]
             }
 
@@ -470,7 +459,7 @@ class WrrocRenderer implements Renderer {
 
         final wrroc = [
             "@context": "https://w3id.org/ro/crate/1.1/context",
-            "@graph"  : [
+            "@graph"  : withoutNulls([
                 [
                     "@id"       : path.name,
                     "@type"     : "CreativeWork",
@@ -480,10 +469,10 @@ class WrrocRenderer implements Renderer {
                         ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
                     ]
                 ],
-                [
+                withoutNulls([
                     "@id"        : "./",
                     "@type"      : "Dataset",
-                    "author"     : ["@id": agent.get("@id").toString()],
+                    "author"     : ["@id": agent.get("@id")],
                     "publisher"  : publisherID ? ["@id": publisherID] : null,
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
@@ -494,19 +483,19 @@ class WrrocRenderer implements Renderer {
                     ],
                     "name"       : "Workflow run of " + manifest.getName() ?: metadata.projectName,
                     "description": manifest.description ?: null,
-                    "hasPart"    : [
+                    "hasPart"    : withoutNulls([
                         ["@id": metadata.projectName],
                         ["@id": "nextflow.config"],
                         readmeFile ? ["@id": readmeFile["@id"]] : null,
-                        *uniqueInputOutputFiles.collect(file -> ["@id": file["@id"]])
-                    ].findAll { it != null },
+                        *asReferences(uniqueInputOutputFiles)
+                    ]),
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
-                        *createActions.collect(createAction -> ["@id": createAction["@id"]])
+                        *asReferences(createActions)
                     ],
                     "license"    : license
-                ].findAll { it.value != null },
+                ]),
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
                     "@type"  : "CreativeWork",
@@ -531,7 +520,7 @@ class WrrocRenderer implements Renderer {
                     "name"   : "Workflow RO-Crate",
                     "version": "1.0"
                 ],
-                [
+                withoutNulls([
                     "@id"                : metadata.projectName,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
                     "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
@@ -544,19 +533,13 @@ class WrrocRenderer implements Renderer {
                     "url"                : manifest.getHomePage() ?: null,
                     "encodingFormat"     : "application/nextflow",
                     "runtimePlatform"    : manifest.getNextflowVersion() ? "Nextflow " + manifest.getNextflowVersion() : null,
-                    "hasPart"            : wfSofwareApplications.collect(sa ->
-                        ["@id": sa["@id"]]
-                    ),
-                    "input"              : formalParameters.collect(fp ->
-                        ["@id": fp["@id"]]
-                    ),
+                    "hasPart"            : asReferences(workflowSofwareApplications),
+                    "input"              : asReferences(formalParameters),
                     "output"             : [
                         // TODO: id of FormalParameter for each output file
                     ],
-                    "step"               : howToSteps.collect(step ->
-                        ["@id": step["@id"]]
-                    ),
-                ].findAll { it.value != null },
+                    "step"               : asReferences(howToSteps),
+                ]),
                 [
                     "@id"       : "https://w3id.org/workflowhub/workflow-ro-crate#nextflow",
                     "@type"     : "ComputerLanguage",
@@ -565,8 +548,8 @@ class WrrocRenderer implements Renderer {
                     "url"       : "https://www.nextflow.io/",
                     "version"   : nextflowVersion
                 ],
-                *wfSofwareApplications,
-                *perTool,
+                *workflowSofwareApplications,
+                *toolSoftwareApplications,
                 *formalParameters,
                 [
                     "@id"  : "#${softwareApplicationId}",
@@ -577,12 +560,10 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"       : "#${organizeActionId}",
                     "@type"     : "OrganizeAction",
-                    "agent"     : ["@id": agent.get("@id").toString()],
+                    "agent"     : ["@id": agent.get("@id")],
                     "instrument": ["@id": "#${softwareApplicationId}"],
                     "name"      : "Run of Nextflow ${nextflowVersion}",
-                    "object"    : [
-                        *controlActions.collect(action -> ["@id": action["@id"]])
-                    ],
+                    "object"    : asReferences(controlActions),
                     "result"    : ["@id": "#${session.uniqueId}"],
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted
@@ -590,18 +571,16 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"       : "#${session.uniqueId}",
                     "@type"     : "CreateAction",
-                    "agent"     : ["@id": agent.get("@id").toString()],
+                    "agent"     : ["@id": agent.get("@id")],
                     "name"      : "Nextflow workflow run ${session.uniqueId}",
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted,
                     "instrument": ["@id": metadata.projectName],
                     "object"    : [
-                        *inputFiles.collect(file -> ["@id": file["@id"]]),
-                        *propertyValues.collect(pv -> ["@id": pv["@id"]])
+                        *asReferences(inputFiles),
+                        *asReferences(propertyValues)
                     ],
-                    "result"    : outputFiles.collect(file ->
-                        ["@id": file["@id"]]
-                    )
+                    "result"    : asReferences(outputFiles)
                 ],
                 agent,
                 organization,
@@ -613,7 +592,7 @@ class WrrocRenderer implements Renderer {
                 *uniqueInputOutputFiles,
                 *propertyValues,
                 license,
-            ].findAll { it != null }
+            ])
         ]
 
         // render manifest to JSON file
@@ -940,6 +919,18 @@ class WrrocRenderer implements Renderer {
          }
 
         return mime
+    }
+
+    private static List asReferences(List values) {
+        return values.collect { value -> ["@id": value["@id"]] }
+    }
+
+    private static <E> List<E> withoutNulls(List<E> list) {
+        return list.findAll { v -> v != null }
+    }
+
+    private static <K,V> Map<K,V> withoutNulls(Map<K,V> map) {
+        return map.findAll { k, v -> v != null }
     }
 
 }
