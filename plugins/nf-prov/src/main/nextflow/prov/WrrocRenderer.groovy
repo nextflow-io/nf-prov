@@ -30,7 +30,6 @@ import nextflow.processor.TaskRun
 import nextflow.script.ProcessDef
 import nextflow.script.ScriptMeta
 import nextflow.util.ConfigHelper
-import org.apache.commons.io.FilenameUtils
 import org.yaml.snakeyaml.Yaml
 
 /**
@@ -43,6 +42,8 @@ import org.yaml.snakeyaml.Yaml
 @CompileStatic
 class WrrocRenderer implements Renderer {
 
+    private static final List<String> README_FILENAMES = List.of("README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README")
+
     private Path path
 
     private boolean overwrite
@@ -51,7 +52,7 @@ class WrrocRenderer implements Renderer {
     private PathNormalizer normalizer
 
     // The final RO-Crate directory
-    private Path crateRootDir
+    private Path createDir
     // Nextflow work directory
     private Path workdir
     // Nextflow pipeline directory (contains main.nf, assets, etc.)
@@ -66,8 +67,6 @@ class WrrocRenderer implements Renderer {
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
 
-    private static final List<String> README_FILENAMES = List.of("README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README")
-
     @Override
     void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
         // get workflow inputs
@@ -76,63 +75,84 @@ class WrrocRenderer implements Renderer {
 
         // get workflow metadata
         final metadata = session.workflowMetadata
-        this.crateRootDir = path.getParent()
+        this.createDir = path.getParent()
         this.workdir = session.workDir
         this.projectDir = metadata.projectDir
         this.normalizer = new PathNormalizer(metadata)
 
         final manifest = metadata.manifest
-        final nextflowMeta = metadata.nextflow
         final scriptFile = metadata.getScriptFile()
 
         final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
-        final nextflowVersion = nextflowMeta.version.toString()
+        final nextflowVersion = metadata.nextflow.version.toString()
         final params = session.params
         final wrrocParams = session.config.navigate('prov.formats.wrroc', [:]) as Map
 
         // warn about any output files outside of the crate directory
         workflowOutputs.each { source, target ->
-            if( !target.startsWith(crateRootDir) )
+            if( !target.startsWith(createDir) )
                 println "Workflow output file $target is outside of the RO-crate directory"
         }
-
-        // save resolved config
-        final configPath = crateRootDir.resolve("nextflow.config")
-        configPath.text = ConfigHelper.toCanonicalString(session.config, true)
-
-        // save pipeline README file
-        Map readmeFile = null
-
-        for( final fileName : README_FILENAMES ) {
-            final readmeFilePath = projectDir.resolve(fileName)
-            if( !Files.exists(readmeFilePath) )
-                continue
-
-            final encoding = FilenameUtils.getExtension(fileName).equals("md")
-                ? "text/markdown"
-                : "text/plain"
-            readmeFile = [
-                "@id"           : fileName,
-                "@type"         : "File",
-                "name"          : fileName,
-                "description"   : "This is the README file of the workflow.",
-                "encodingFormat": encoding
-            ]
-            Files.copy(readmeFilePath, crateRootDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
-            break
-        }
-
-        // Copy nextflow_schema_json into crate if it exists
-        final schemaFile = scriptFile.getParent().resolve("nextflow_schema.json")
-        // TODO Add to crate metadata
-        if( Files.exists(schemaFile) )
-            Files.copy(schemaFile, crateRootDir.resolve(schemaFile.getFileName()), StandardCopyOption.REPLACE_EXISTING)
 
         // create manifest
         final softwareApplicationId = metadata.projectName + '#sa'
         final organizeActionId = metadata.projectName + '#organize'
+        final datasetParts = []
+
+        // -- license
+        final license = [
+            "@id"  : manifest.license,
+            "@type": "CreativeWork"
+        ]
+
+        datasetParts.add(license)
+
+        // -- readme file
+        for( final fileName : README_FILENAMES ) {
+            final readmePath = projectDir.resolve(fileName)
+            if( !Files.exists(readmePath) )
+                continue
+
+            Files.copy(readmePath, createDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+
+            datasetParts.add([
+                "@id"           : fileName,
+                "@type"         : "File",
+                "name"          : fileName,
+                "description"   : "The README file of the workflow.",
+                "encodingFormat": getEncodingFormat(readmePath)
+            ])
+            break
+        }
+
+        // -- parameter schema
+        final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
+        if( Files.exists(schemaPath) ) {
+            final fileName = schemaPath.name
+
+            Files.copy(schemaPath, createDir.resolve(fileName), StandardCopyOption.REPLACE_EXISTING)
+            datasetParts.add([
+                "@id"           : fileName,
+                "@type"         : "File",
+                "name"          : fileName,
+                "description"   : "The parameter schema of the workflow.",
+                "encodingFormat": "application/json"
+            ])
+        }
+
+        // -- resolved config
+        final configPath = createDir.resolve("nextflow.config")
+        configPath.text = ConfigHelper.toCanonicalString(session.config, true)
+
+        datasetParts.add([
+            "@id"           : "nextflow.config",
+            "@type"         : "File",
+            "name"          : "Resolved Nextflow configuration",
+            "description"   : "The resolved Nextflow configuration for the workflow run.",
+            "encodingFormat": "text/plain"
+        ])
 
         // Process wrroc configuration options
         final agent = parseAgentInfo(wrrocParams)
@@ -141,30 +161,37 @@ class WrrocRenderer implements Renderer {
         if( organization )
             agent.put("affiliation", ["@id": organization.get("@id")])
 
-        // license information
-        final license = [
-            "@id"  : manifest.license,
-            "@type": "CreativeWork"
-        ]
-
+        // -- pipeline parameters
+        // TODO: use parameter schema to populate additional fields
+        // TODO: use parameter schema to add file params to crate
         final formalParameters = params
             .collect { name, value ->
                 withoutNulls([
                     "@id"           : "#${name}",
                     "@type"         : "FormalParameter",
-                    // TODO: infer type from value at runtime
-                    "additionalType": "String",
-                    // "defaultValue": "",
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
-                    "description"   : null,
                     "encodingFormat": getEncodingFormat(value),
-                    // TODO: match to output if type is Path
-                    // "workExample": ["@id": outputId],
                     "name"          : name,
-                    // "valueRequired": "True"
                 ])
             }
 
+        final propertyValues = params
+            .collect { name, value ->
+                final normalized =
+                    (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
+                    : value instanceof CharSequence ? normalizePath(value.toString())
+                    : value
+
+                return [
+                    "@id"          : "#${name}-pv",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": "#${name}"],
+                    "name"         : name,
+                    "value"        : normalized
+                ]
+            }
+
+        // -- input, output, and intermediate files
         final inputFiles = workflowInputs
             .collect { source ->
                 withoutNulls([
@@ -193,7 +220,7 @@ class WrrocRenderer implements Renderer {
         final outputFiles = workflowOutputs
             .collect { source, target ->
                 withoutNulls([
-                    "@id"           : crateRootDir.relativize(target).toString(),
+                    "@id"           : createDir.relativize(target).toString(),
                     "@type"         : getType(target),
                     "name"          : target.name,
                     "description"   : null,
@@ -203,62 +230,7 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final propertyValues = params
-            .collect { name, value ->
-                final normalized =
-                    (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
-                    : value instanceof CharSequence ? normalizePath(value.toString())
-                    : value
-
-                return [
-                    "@id"          : "#${name}-pv",
-                    "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": "#${name}"],
-                    "name"         : name,
-                    "value"        : normalized
-                ]
-            }
-
-        final taskCreateActions = tasks
-            .collect { task ->
-                final createAction = [
-                    "@id"         : "#" + task.hash.toString(),
-                    "@type"       : "CreateAction",
-                    "name"        : task.getName(),
-                    // TODO: get description from meta yaml or (future) docstring
-                    //"description" : "",
-                    "instrument"  : ["@id": getModuleId(task.processor)],
-                    "agent"       : ["@id": agent.get("@id")],
-                    "object"      : task.getInputFilesMap().collect { name, source ->
-                        ["@id": normalizePath(source)]
-                    },
-                    "result"      : ProvHelper.getTaskOutputs(task).collect { target ->
-                        ["@id": normalizePath(target)]
-                    },
-                    "actionStatus": task.getExitStatus() == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
-                ]
-
-                // Add error message if there is one
-                if (task.getExitStatus() != 0) {
-                    createAction.put("error", task.getStderr())
-                }
-
-                return createAction
-            }
-
-        final publishCreateActions = workflowOutputs
-            .collect { source, target ->
-                [
-                    "@id"         : "publish#" + normalizePath(source),
-                    "@type"       : "CreateAction",
-                    "name"        : "publish",
-                    "instrument"  : ["@id": softwareApplicationId],
-                    "object"      : ["@id": normalizePath(source)],
-                    "result"      : ["@id": crateRootDir.relativize(target).toString()],
-                    "actionStatus": "http://schema.org/CompletedActionStatus"
-                ]
-            }
-
+        // -- workflow definition
         final taskProcessors = tasks
             .collect { task -> task.processor }
             .unique()
@@ -343,13 +315,42 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
-        final configFile = [
-            "@id"           : "nextflow.config",
-            "@type"         : "File",
-            "name"          : "Effective Nextflow configuration",
-            "description"   : "This is the effective configuration during runtime compiled from all configuration sources.",
-            "encodingFormat": "text/plain"
-        ]
+        // -- workflow execution
+        final taskCreateActions = tasks
+            .collect { task ->
+                final result = [
+                    "@id"         : "#" + task.hash.toString(),
+                    "@type"       : "CreateAction",
+                    "name"        : task.getName(),
+                    // TODO: get description from meta yaml
+                    //"description" : "",
+                    "instrument"  : ["@id": getModuleId(task.processor)],
+                    "agent"       : ["@id": agent.get("@id")],
+                    "object"      : task.getInputFilesMap().collect { name, source ->
+                        ["@id": normalizePath(source)]
+                    },
+                    "result"      : ProvHelper.getTaskOutputs(task).collect { target ->
+                        ["@id": normalizePath(target)]
+                    },
+                    "actionStatus": task.exitStatus == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
+                ]
+                if( task.exitStatus != 0 )
+                    result["error"] = task.stderr
+                return result
+            }
+
+        final publishCreateActions = workflowOutputs
+            .collect { source, target ->
+                [
+                    "@id"         : "publish#" + normalizePath(source),
+                    "@type"       : "CreateAction",
+                    "name"        : "publish",
+                    "instrument"  : ["@id": softwareApplicationId],
+                    "object"      : ["@id": normalizePath(source)],
+                    "result"      : ["@id": createDir.relativize(target).toString()],
+                    "actionStatus": "http://schema.org/CompletedActionStatus"
+                ]
+            }
 
         final wrroc = [
             "@context": "https://w3id.org/ro/crate/1.1/context",
@@ -379,8 +380,7 @@ class WrrocRenderer implements Renderer {
                     "description": manifest.description ?: null,
                     "hasPart"    : withoutNulls([
                         ["@id": metadata.projectName],
-                        ["@id": "nextflow.config"],
-                        readmeFile ? ["@id": readmeFile["@id"]] : null,
+                        *asReferences(datasetParts),
                         *asReferences(inputFiles),
                         *asReferences(intermediateFiles),
                         *asReferences(outputFiles)
@@ -391,7 +391,7 @@ class WrrocRenderer implements Renderer {
                         *asReferences(taskCreateActions),
                         *asReferences(publishCreateActions)
                     ],
-                    "license"    : license
+                    "license"    : manifest.license
                 ]),
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
@@ -430,7 +430,7 @@ class WrrocRenderer implements Renderer {
                     "license"            : manifest.license,
                     "url"                : manifest.homePage,
                     "encodingFormat"     : "application/nextflow",
-                    "runtimePlatform"    : "Nextflow " + metadata.nextflow.version.toString(),
+                    "runtimePlatform"    : "Nextflow " + nextflowVersion,
                     "hasPart"            : asReferences(moduleSoftwareApplications),
                     "input"              : asReferences(formalParameters),
                     "output"             : [
@@ -486,13 +486,11 @@ class WrrocRenderer implements Renderer {
                 *controlActions,
                 *taskCreateActions,
                 *publishCreateActions,
-                configFile,
-                readmeFile,
+                *datasetParts,
                 *inputFiles,
                 *intermediateFiles,
                 *outputFiles,
                 *propertyValues,
-                license,
             ])
         ]
 
@@ -716,22 +714,21 @@ class WrrocRenderer implements Renderer {
     /**
      * Get the encodingFormat of a file as MIME Type.
      *
-     * @param source Path to file
+     * @param path Path to file
      * @return the MIME type of the file, or null if it's not a file.
      */
-    static String getEncodingFormat(Path source) {
-        if( !(source && source.exists() && source.isFile()) )
+    static String getEncodingFormat(Path path) {
+        if( !(path && path.exists() && path.isFile()) )
             return null
 
-        String mime = Files.probeContentType(source)
+        String mime = Files.probeContentType(path)
         if( mime )
             return mime
 
         // It seems that YAML has a media type only since beginning of 2024
         // Set this by hand if this is run on older systems:
         // https://httptoolkit.com/blog/yaml-media-type-rfc/
-        final extension = FilenameUtils.getExtension(source.toString())
-        if( ["yml", "yaml"].contains(extension) )
+        if( ["yml", "yaml"].contains(path.getExtension()) )
             return "application/yaml"
 
         return null
