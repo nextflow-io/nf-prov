@@ -28,6 +28,7 @@ import nextflow.Session
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.script.ScriptMeta
+import nextflow.util.ConfigHelper
 import org.apache.commons.io.FilenameUtils
 import org.yaml.snakeyaml.Yaml
 
@@ -98,7 +99,7 @@ class WrrocRenderer implements Renderer {
 
         // save resolved config
         final configPath = crateRootDir.resolve("nextflow.config")
-        configPath.text = session.config.toConfigObject()
+        configPath.text = ConfigHelper.toCanonicalString(session.config, true)
 
         // save pipeline README file
         Map readmeFile = null
