@@ -83,7 +83,7 @@ class WrrocRenderer implements Renderer {
         final configMap = session.config
 
         // Set RO-Crate Root and workdir
-        this.crateRootDir = Path.of(params['outdir'].toString()).toAbsolutePath()
+        this.crateRootDir = path.getParent()
         this.workdir = session.getWorkDir()
         this.projectDir = session.getWorkflowMetadata().getProjectDir()
 
