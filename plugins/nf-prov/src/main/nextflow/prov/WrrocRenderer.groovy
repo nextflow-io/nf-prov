@@ -700,6 +700,9 @@ class WrrocRenderer implements Renderer {
                 return "Number"
             case CharSequence:
                 return "Text"
+            case List:
+            case Map:
+                return "Text"
             default:
                 return null
         }
