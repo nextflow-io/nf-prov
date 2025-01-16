@@ -129,6 +129,17 @@ class WrrocRenderer implements Renderer {
             break
         }
 
+        // -- main script
+        metadata.scriptFile.copyTo(crateDir)
+
+        datasetParts.add([
+            "@id"           : "main.nf",
+            "@type"         : "File",
+            "name"          : "Main script",
+            "description"   : "The main script of the workflow.",
+            "encodingFormat": "text/plain"
+        ])
+
         // -- parameter schema
         final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
         Map<String,Map> paramSchema = [:]
