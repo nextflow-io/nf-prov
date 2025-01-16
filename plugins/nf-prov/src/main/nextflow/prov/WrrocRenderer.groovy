@@ -445,7 +445,7 @@ class WrrocRenderer implements Renderer {
                     "codeRepository"     : metadata.repository,
                     "version"            : metadata.commitId,
                     "license"            : manifest.license,
-                    "url"                : manifest.homePage,
+                    "url"                : normalizePath(metadata.scriptFile),
                     "encodingFormat"     : "application/nextflow",
                     "runtimePlatform"    : "Nextflow " + nextflowVersion,
                     "hasPart"            : asReferences(moduleSoftwareApplications),
