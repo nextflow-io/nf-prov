@@ -212,7 +212,7 @@ class WrrocRenderer implements Renderer {
         params.each { name, value ->
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
-            if( type == "File" || type == "Directory" ) {
+            if( type == "File" || type == "Dataset" ) {
                 final source = (value as Path).complete()
                 // don't try to download remote files...
                 if( source.fileSystem != FileSystems.default )
@@ -702,7 +702,7 @@ class WrrocRenderer implements Renderer {
                 case "string":
                     return \
                         format == "file-path" ? "File" :
-                        format == "directory-path" ? "Directory" :
+                        format == "directory-path" ? "Dataset" :
                         "Text"
             }
         }
@@ -790,14 +790,14 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Check if a Path is a file or a directory and return corresponding "@type"
+     * Get the RO-crate "@type" of a path based on whether
+     * it is a file or directory.
      *
-     * @param path The path to be checked
-     * @return type Either "File" or "Directory"
+     * @param path
      */
     private static String getType(Path path) {
         return path.isDirectory()
-            ? "Directory"
+            ? "Dataset"
             : "File"
     }
 
