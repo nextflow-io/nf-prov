@@ -180,6 +180,7 @@ class WrrocRenderer implements Renderer {
             }
 
         final propertyValues = params
+            .findAll { name, value -> value != null }
             .collect { name, value ->
                 final normalized =
                     (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
