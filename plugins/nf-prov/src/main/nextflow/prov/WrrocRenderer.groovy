@@ -16,6 +16,7 @@
 
 package nextflow.prov
 
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDateTime
@@ -164,7 +165,7 @@ class WrrocRenderer implements Renderer {
                 final schema = paramSchema[name] ?: [:]
                 final type = getParameterType(name, value, schema)
                 final encoding = type == "File"
-                    ? getEncodingFormat(Path.of(value.toString()))
+                    ? getEncodingFormat(value as Path)
                     : null
 
                 return withoutNulls([
@@ -201,7 +202,10 @@ class WrrocRenderer implements Renderer {
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
             if( type == "File" || type == "Directory" ) {
-                final source = Path.of(value.toString()).toAbsolutePath()
+                final source = (value as Path).complete()
+                // don't try to download remote files...
+                if( source.fileSystem != FileSystems.default )
+                    return
                 // don't copy params.outdir into itself...
                 if( source == crateDir )
                     return
