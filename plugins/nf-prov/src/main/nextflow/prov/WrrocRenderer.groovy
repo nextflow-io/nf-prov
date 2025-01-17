@@ -217,13 +217,13 @@ class WrrocRenderer implements Renderer {
                 return
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
-            if( type == "File" || type == "Dataset" ) {
+            if( type == "File" ) {
                 final source = (value as Path).complete()
-                // don't try to download remote files...
+                // don't try to download remote files
                 if( source.fileSystem != FileSystems.default )
                     return
-                // don't copy params.outdir into itself...
-                if( source == crateDir )
+                // don't try to copy local directories
+                if( !source.isFile() )
                     return
                 inputFiles.add(withoutNulls([
                     "@id"           : source.name,
@@ -231,6 +231,7 @@ class WrrocRenderer implements Renderer {
                     "description"   : "Input file specified by params.${name}",
                     "encodingFormat": getEncodingFormat(source)
                 ]))
+                log.debug "Copying input file specified by params.${name} into RO-Crate: ${source.toUriString()}"
                 source.copyTo(crateDir)
             }
         }
