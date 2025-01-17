@@ -198,6 +198,19 @@ class WrrocRenderer implements Renderer {
                 ]
             }
 
+        // -- input files
+        final inputFiles = workflowInputs
+            .findAll { source -> !ProvHelper.isStagedInput(source, session) }
+            .collect { source ->
+                withoutNulls([
+                    "@id"           : normalizePath(source),
+                    "@type"         : getType(source),
+                    "name"          : source.name,
+                    "description"   : null,
+                    "encodingFormat": getEncodingFormat(source),
+                ])
+            }
+
         // -- copy input files from params to crate
         params.each { name, value ->
             final schema = paramSchema[name] ?: [:]
@@ -210,7 +223,7 @@ class WrrocRenderer implements Renderer {
                 // don't copy params.outdir into itself...
                 if( source == crateDir )
                     return
-                datasetParts.add(withoutNulls([
+                inputFiles.add(withoutNulls([
                     "@id"           : source.name,
                     "@type"         : type,
                     "description"   : "Input file specified by params.${name}",
@@ -220,18 +233,7 @@ class WrrocRenderer implements Renderer {
             }
         }
 
-        // -- input and output files
-        final inputFiles = workflowInputs
-            .collect { source ->
-                withoutNulls([
-                    "@id"           : normalizePath(source),
-                    "@type"         : getType(source),
-                    "name"          : source.name,
-                    "description"   : null,
-                    "encodingFormat": getEncodingFormat(source),
-                ])
-            }
-
+        // -- output files
         final outputFiles = workflowOutputs
             .findAll { source, target ->
                 // warn about any output files outside of the crate directory
@@ -245,7 +247,6 @@ class WrrocRenderer implements Renderer {
                     "@id"           : crateDir.relativize(target).toString(),
                     "@type"         : getType(target),
                     "name"          : target.name,
-                    "description"   : null,
                     "encodingFormat": getEncodingFormat(target),
                 ])
             }
@@ -336,11 +337,25 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- workflow execution
+        final stagedInputs = workflowInputs
+            .findAll { source -> ProvHelper.isStagedInput(source, session) }
+            .collect { source ->
+                final name = getStagedInputName(source, session)
+
+                withoutNulls([
+                    "@id"           : "stage#${name}",
+                    "@type"         : getType(source),
+                    "name"          : name,
+                    "encodingFormat": getEncodingFormat(source),
+                ])
+            }
+
         final taskCreateActions = tasks
             .collect { task ->
                 final inputs = task.getInputFilesMap().collect { name, source ->
-                    final id = source in taskLookup
-                        ? getTaskOutputId(taskLookup[source], source)
+                    final id =
+                        source in taskLookup ? getTaskOutputId(taskLookup[source], source)
+                        : ProvHelper.isStagedInput(source, session) ? "stage#${getStagedInputName(source, session)}"
                         : normalizePath(source)
                     ["@id": id]
                 }
@@ -421,6 +436,7 @@ class WrrocRenderer implements Renderer {
                         ["@id": mainScriptId],
                         *asReferences(datasetParts),
                         *asReferences(inputFiles),
+                        *asReferences(stagedInputs),
                         *asReferences(taskOutputs),
                         *asReferences(outputFiles)
                     ]),
@@ -526,6 +542,7 @@ class WrrocRenderer implements Renderer {
                 *propertyValues,
                 *controlActions,
                 *taskCreateActions,
+                *stagedInputs,
                 *taskOutputs,
                 *publishCreateActions,
                 *inputFiles,
@@ -785,6 +802,17 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
+     * Get the relative name of a staged input.
+     *
+     * @param source
+     * @param session
+     */
+    private static String getStagedInputName(Path source, Session session) {
+        final stageDir = ProvHelper.getStageDir(session)
+        return stageDir.relativize(source).toString()
+    }
+
+    /**
      * Get the canonical id of a task.
      *
      * @param task
@@ -869,11 +897,11 @@ class WrrocRenderer implements Renderer {
         return values.collect { value -> ["@id": value["@id"]] }
     }
 
-    private static <E> List<E> withoutNulls(List<E> list) {
+    private static List withoutNulls(List list) {
         return list.findAll { v -> v != null }
     }
 
-    private static <K,V> Map<K,V> withoutNulls(Map<K,V> map) {
+    private static Map withoutNulls(Map map) {
         return map.findAll { k, v -> v != null }
     }
 
