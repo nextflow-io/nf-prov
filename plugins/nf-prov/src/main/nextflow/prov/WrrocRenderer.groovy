@@ -124,15 +124,8 @@ class WrrocRenderer implements Renderer {
         }
 
         // -- main script
+        final mainScriptId = metadata.scriptFile.name
         metadata.scriptFile.copyTo(crateDir)
-
-        datasetParts.add([
-            "@id"           : "main.nf",
-            "@type"         : "File",
-            "name"          : "Main script",
-            "description"   : "The main script of the workflow.",
-            "encodingFormat": "application/nextflow"
-        ])
 
         // -- parameter schema
         final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
@@ -172,6 +165,9 @@ class WrrocRenderer implements Renderer {
                 final encoding = type == "File"
                     ? getEncodingFormat(value as Path)
                     : null
+
+                if( !type )
+                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-crate"
 
                 return withoutNulls([
                     "@id"           : getFormalParameterId(metadata.projectName, name),
@@ -422,16 +418,16 @@ class WrrocRenderer implements Renderer {
                     "name"       : "Workflow run of " + manifest.name ?: metadata.projectName,
                     "description": manifest.description ?: null,
                     "hasPart"    : withoutNulls([
-                        ["@id": metadata.projectName],
+                        ["@id": mainScriptId],
                         *asReferences(datasetParts),
                         *asReferences(inputFiles),
+                        *asReferences(taskOutputs),
                         *asReferences(outputFiles)
                     ]),
-                    "mainEntity" : ["@id": metadata.projectName],
+                    "mainEntity" : ["@id": mainScriptId],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
                         *asReferences(taskCreateActions),
-                        *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
                     ],
                     "license"    : manifest.license
@@ -461,7 +457,7 @@ class WrrocRenderer implements Renderer {
                     "version": "1.0"
                 ],
                 withoutNulls([
-                    "@id"                : metadata.projectName,
+                    "@id"                : mainScriptId,
                     "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
                     "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
                     "name"               : manifest.name ?: metadata.projectName,
@@ -471,7 +467,7 @@ class WrrocRenderer implements Renderer {
                     "codeRepository"     : metadata.repository,
                     "version"            : metadata.commitId,
                     "license"            : manifest.license,
-                    "url"                : normalizePath(metadata.scriptFile),
+                    "url"                : metadata.repository ? normalizePath(metadata.scriptFile) : null,
                     "encodingFormat"     : "application/nextflow",
                     "runtimePlatform"    : "Nextflow " + nextflowVersion,
                     "hasPart"            : asReferences(moduleSoftwareApplications),
@@ -516,7 +512,7 @@ class WrrocRenderer implements Renderer {
                     "name"      : "Nextflow workflow run ${session.uniqueId}",
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted,
-                    "instrument": ["@id": metadata.projectName],
+                    "instrument": ["@id": mainScriptId],
                     "object"    : [
                         *asReferences(propertyValues),
                         *asReferences(inputFiles),
