@@ -214,6 +214,12 @@ class WrrocRenderer implements Renderer {
                 // don't copy params.outdir into itself...
                 if( source == crateDir )
                     return
+                datasetParts.add(withoutNulls([
+                    "@id"           : source.name,
+                    "@type"         : type,
+                    "description"   : "Input file specified by params.${name}",
+                    "encodingFormat": getEncodingFormat(source)
+                ]))
                 source.copyTo(crateDir)
             }
         }
