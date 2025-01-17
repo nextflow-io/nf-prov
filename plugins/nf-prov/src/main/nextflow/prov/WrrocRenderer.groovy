@@ -355,7 +355,7 @@ class WrrocRenderer implements Renderer {
 
                 withoutNulls([
                     "@id"           : "#stage/${name}",
-                    "@type"         : getType(source),
+                    "@type"         : "CreativeWork",
                     "name"          : name,
                     "encodingFormat": getEncodingFormat(source),
                 ])
@@ -394,7 +394,7 @@ class WrrocRenderer implements Renderer {
 
                 return withoutNulls([
                     "@id"           : getTaskOutputId(task, name),
-                    "@type"         : getType(target),
+                    "@type"         : "CreativeWork",
                     "name"          : name,
                     "encodingFormat": getEncodingFormat(target),
                 ])
@@ -447,14 +447,14 @@ class WrrocRenderer implements Renderer {
                         ["@id": mainScriptId],
                         *asReferences(datasetParts),
                         *asReferences(inputFiles),
-                        *asReferences(stagedInputs),
-                        *asReferences(taskOutputs),
                         *asReferences(outputFiles)
                     ]),
                     "mainEntity" : ["@id": mainScriptId],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
+                        *asReferences(stagedInputs),
                         *asReferences(taskCreateActions),
+                        *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
                     ],
                     "license"    : manifest.license
@@ -552,8 +552,8 @@ class WrrocRenderer implements Renderer {
                 *datasetParts,
                 *propertyValues,
                 *controlActions,
-                *taskCreateActions,
                 *stagedInputs,
+                *taskCreateActions,
                 *taskOutputs,
                 *publishCreateActions,
                 *inputFiles,
