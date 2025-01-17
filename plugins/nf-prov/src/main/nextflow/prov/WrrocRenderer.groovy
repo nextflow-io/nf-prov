@@ -91,7 +91,7 @@ class WrrocRenderer implements Renderer {
         final organization = getOrganizationInfo(wrrocOpts)
         final publisherId = getPublisherId(wrrocOpts, agent, organization)
         if( organization )
-            agent["affiliation"] = ["@id": organization.get("@id")]
+            agent["affiliation"] = ["@id": organization["@id"]]
 
         // create manifest
         final softwareApplicationId = metadata.projectName + '#sa'
@@ -131,7 +131,7 @@ class WrrocRenderer implements Renderer {
             "@type"         : "File",
             "name"          : "Main script",
             "description"   : "The main script of the workflow.",
-            "encodingFormat": "text/plain"
+            "encodingFormat": "application/nextflow"
         ])
 
         // -- parameter schema
@@ -227,8 +227,6 @@ class WrrocRenderer implements Renderer {
                     "name"          : source.name,
                     "description"   : null,
                     "encodingFormat": getEncodingFormat(source),
-                    // TODO: apply if matching param is found
-                    // "exampleOfWork": ["@id": paramId]
                 ])
             }
 
@@ -258,8 +256,6 @@ class WrrocRenderer implements Renderer {
                     "name"          : target.name,
                     "description"   : null,
                     "encodingFormat": getEncodingFormat(target),
-                    // TODO: create FormalParameter for each output file?
-                    // "exampleOfWork": {"@id": "#reversed"}
                 ])
             }
 
@@ -277,36 +273,36 @@ class WrrocRenderer implements Renderer {
 
         final moduleSoftwareApplications = processDefs
             .collect() { process ->
-                final metaYaml = getModuleSchema(process)
-                if (metaYaml == null) {
-                    return [
-                        "@id"    : getModuleId(process),
-                        "@type"  : "SoftwareApplication",
-                        "name"   : process.getName(),
-                    ]
-                }
-
-                final moduleName = metaYaml.get('name') as String
-                final tools = metaYaml.getOrDefault('tools', []) as List
-                final parts = tools.collect { tool ->
-                    final entry = (tool as Map).entrySet().first()
-                    final toolName = entry.key as String
-                    ["@id": getToolId(moduleName, toolName)]
-                }
-
-                return [
+                final result = [
                     "@id"    : getModuleId(process),
                     "@type"  : "SoftwareApplication",
-                    "name"   : process.getBaseName(),
-                    "hasPart": !parts.isEmpty() ? parts : null
+                    "name"   : process.getName(),
                 ]
+
+                final metaYaml = getModuleSchema(process)
+                if( metaYaml ) {
+                    final moduleName = metaYaml.name as String
+                    final tools = metaYaml.getOrDefault('tools', []) as List
+                    final parts = tools.collect { tool ->
+                        final entry = (tool as Map).entrySet().first()
+                        final toolName = entry.key as String
+                        ["@id": getToolId(moduleName, toolName)]
+                    }
+
+                    if( parts )
+                        result.hasPart = parts
+                }
+
+                return result
             }
 
         final toolSoftwareApplications = processDefs
-            .collect { process -> getModuleSchema(process) }
-            .findAll { metaYaml -> metaYaml != null }
-            .collectMany { metaYaml ->
-                final moduleName = metaYaml.get('name') as String
+            .collectMany { process ->
+                final metaYaml = getModuleSchema(process)
+                if( !metaYaml )
+                    return []
+
+                final moduleName = metaYaml.name as String
                 final tools = metaYaml.getOrDefault('tools', []) as List
 
                 return tools
@@ -318,7 +314,7 @@ class WrrocRenderer implements Renderer {
                             "@id"         : getToolId(moduleName, toolName),
                             "@type"       : "SoftwareApplication",
                             "name"        : toolName,
-                            "description" : entry.value?.toString() ?: ""
+                            "description" : toolDescription
                         ]
                     }
             }
@@ -355,8 +351,6 @@ class WrrocRenderer implements Renderer {
                     "@id"         : "#" + task.hash.toString(),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
-                    // TODO: get description from meta yaml
-                    //"description" : "",
                     "instrument"  : ["@id": getModuleId(task.processor)],
                     "agent"       : ["@id": agent.get("@id")],
                     "object"      : task.getInputFilesMap().collect { name, source ->
@@ -400,7 +394,7 @@ class WrrocRenderer implements Renderer {
                 withoutNulls([
                     "@id"        : "./",
                     "@type"      : "Dataset",
-                    "author"     : ["@id": agent.get("@id")],
+                    "author"     : ["@id": agent["@id"]],
                     "publisher"  : publisherId ? ["@id": publisherId] : null,
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
@@ -479,19 +473,19 @@ class WrrocRenderer implements Renderer {
                     "url"       : "https://www.nextflow.io/",
                     "version"   : nextflowVersion
                 ],
-                *moduleSoftwareApplications,
-                *toolSoftwareApplications,
-                *formalParameters,
                 [
                     "@id"  : softwareApplicationId,
                     "@type": "SoftwareApplication",
                     "name" : "Nextflow ${nextflowVersion}"
                 ],
+                *moduleSoftwareApplications,
+                *toolSoftwareApplications,
+                *formalParameters,
                 *howToSteps,
                 [
                     "@id"       : organizeActionId,
                     "@type"     : "OrganizeAction",
-                    "agent"     : ["@id": agent.get("@id")],
+                    "agent"     : ["@id": agent["@id"]],
                     "instrument": ["@id": softwareApplicationId],
                     "name"      : "Run of Nextflow ${nextflowVersion}",
                     "object"    : asReferences(controlActions),
@@ -502,7 +496,7 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"       : "#${session.uniqueId}",
                     "@type"     : "CreateAction",
-                    "agent"     : ["@id": agent.get("@id")],
+                    "agent"     : ["@id": agent["@id"]],
                     "name"      : "Nextflow workflow run ${session.uniqueId}",
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted,
