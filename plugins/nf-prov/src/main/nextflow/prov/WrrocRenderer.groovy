@@ -112,13 +112,13 @@ class WrrocRenderer implements Renderer {
             if( !Files.exists(readmePath) )
                 continue
 
-            readmePath.copyTo(crateDir.resolve(fileName))
+            readmePath.copyTo(crateDir)
             datasetParts.add([
                 "@id"           : fileName,
                 "@type"         : "File",
                 "name"          : fileName,
                 "description"   : "The README file of the workflow.",
-                "encodingFormat": getEncodingFormat(readmePath)
+                "encodingFormat": getEncodingFormat(readmePath) ?: "text/plain"
             ])
             break
         }
@@ -133,7 +133,7 @@ class WrrocRenderer implements Renderer {
         if( Files.exists(schemaPath) ) {
             final fileName = schemaPath.name
 
-            schemaPath.copyTo(crateDir.resolve(fileName))
+            schemaPath.copyTo(crateDir)
             datasetParts.add([
                 "@id"           : fileName,
                 "@type"         : "File",
@@ -167,7 +167,7 @@ class WrrocRenderer implements Renderer {
                     : null
 
                 if( !type )
-                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-crate"
+                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate"
 
                 return withoutNulls([
                     "@id"           : getFormalParameterId(metadata.projectName, name),
@@ -206,7 +206,6 @@ class WrrocRenderer implements Renderer {
                     "@id"           : normalizePath(source),
                     "@type"         : getType(source),
                     "name"          : source.name,
-                    "description"   : null,
                     "encodingFormat": getEncodingFormat(source),
                 ])
             }
@@ -242,7 +241,7 @@ class WrrocRenderer implements Renderer {
                 // warn about any output files outside of the crate directory
                 final result = target.startsWith(crateDir)
                 if( !result )
-                    log.warn "Excluding workflow output $target because it is outside of the RO-crate directory"
+                    log.warn "Excluding workflow output ${target} because it is outside of the RO-Crate directory -- make sure that the workflow output directory and RO-Crate directory are the same"
                 return result
             }
             .collect { source, target ->
@@ -858,7 +857,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the RO-crate "@type" of a path based on whether
+     * Get the RO-Crate "@type" of a path based on whether
      * it is a file or directory.
      *
      * @param path
