@@ -93,12 +93,6 @@ class WrrocRenderer implements Renderer {
         if( organization )
             agent["affiliation"] = ["@id": organization.get("@id")]
 
-        // warn about any output files outside of the crate directory
-        workflowOutputs.each { source, target ->
-            if( !target.startsWith(crateDir) )
-                log.warn "Workflow output file $target is outside of the RO-crate directory"
-        }
-
         // create manifest
         final softwareApplicationId = metadata.projectName + '#sa'
         final organizeActionId = metadata.projectName + '#organize'
@@ -250,6 +244,13 @@ class WrrocRenderer implements Renderer {
         }
 
         final outputFiles = workflowOutputs
+            .findAll { source, target ->
+                // warn about any output files outside of the crate directory
+                final result = target.startsWith(crateDir)
+                if( !result )
+                    log.warn "Excluding workflow output $target because it is outside of the RO-crate directory"
+                return result
+            }
             .collect { source, target ->
                 withoutNulls([
                     "@id"           : crateDir.relativize(target).toString(),
@@ -515,11 +516,11 @@ class WrrocRenderer implements Renderer {
                 agent,
                 organization,
                 *contactPoints,
+                *datasetParts,
+                *propertyValues,
                 *controlActions,
                 *taskCreateActions,
                 *publishCreateActions,
-                *datasetParts,
-                *propertyValues,
                 *inputFiles,
                 *intermediateFiles,
                 *outputFiles,
