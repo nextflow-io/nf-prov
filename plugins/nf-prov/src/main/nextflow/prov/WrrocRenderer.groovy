@@ -94,8 +94,6 @@ class WrrocRenderer implements Renderer {
             agent["affiliation"] = ["@id": organization["@id"]]
 
         // create manifest
-        final softwareApplicationId = metadata.projectName + '#sa'
-        final organizeActionId = metadata.projectName + '#organize'
         final datasetParts = []
 
         // -- license
@@ -125,6 +123,8 @@ class WrrocRenderer implements Renderer {
 
         // -- main script
         final mainScriptId = metadata.scriptFile.name
+        final softwareApplicationId = "${mainScriptId}#software-application"
+        final organizeActionId = "${mainScriptId}#organize"
         metadata.scriptFile.copyTo(crateDir)
 
         // -- parameter schema
@@ -170,7 +170,7 @@ class WrrocRenderer implements Renderer {
                     log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate"
 
                 return withoutNulls([
-                    "@id"           : getFormalParameterId(metadata.projectName, name),
+                    "@id"           : getFormalParameterId(name),
                     "@type"         : "FormalParameter",
                     "additionalType": type,
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
@@ -184,15 +184,16 @@ class WrrocRenderer implements Renderer {
         final propertyValues = params
             .findAll { name, value -> value != null }
             .collect { name, value ->
+                final paramId = getFormalParameterId(name)
                 final normalized =
                     (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
                     : value instanceof CharSequence ? normalizePath(value.toString())
                     : value
 
                 return [
-                    "@id"          : "#${name}",
+                    "@id"          : "${paramId}/value",
                     "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": getFormalParameterId(metadata.projectName, name)],
+                    "exampleOfWork": ["@id": paramId],
                     "name"         : name,
                     "value"        : normalized
                 ]
@@ -262,27 +263,37 @@ class WrrocRenderer implements Renderer {
             .collect { process -> ScriptMeta.get(process.getOwnerScript()) }
             .unique()
             .collectMany { meta ->
-                meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef }
-            } as List<ProcessDef>
+                meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef } as List<ProcessDef>
+            }
+
+        final processLookup = taskProcessors
+            .inject([:] as Map<TaskProcessor,ProcessDef>) { acc, processor ->
+                final simpleName = processor.name.split(':').last()
+                acc[processor] = ScriptMeta.get(processor.getOwnerScript()).getProcess(simpleName)
+                acc
+            }
 
         final moduleSoftwareApplications = processDefs
             .collect() { process ->
                 final result = [
                     "@id"    : getModuleId(process),
                     "@type"  : "SoftwareApplication",
-                    "name"   : process.getName(),
+                    "name"   : process.baseName,
+                    "url"    : getModuleUrl(process),
                 ]
 
                 final metaYaml = getModuleSchema(process)
                 if( metaYaml ) {
-                    final moduleName = metaYaml.name as String
+                    final name = metaYaml.name as String
                     final tools = metaYaml.getOrDefault('tools', []) as List
                     final parts = tools.collect { tool ->
                         final entry = (tool as Map).entrySet().first()
                         final toolName = entry.key as String
-                        ["@id": getToolId(moduleName, toolName)]
+                        ["@id": getToolId(process.baseName, toolName)]
                     }
 
+                    if( name )
+                        result.name = name
                     if( parts )
                         result.hasPart = parts
                 }
@@ -296,16 +307,14 @@ class WrrocRenderer implements Renderer {
                 if( !metaYaml )
                     return []
 
-                final moduleName = metaYaml.name as String
                 final tools = metaYaml.getOrDefault('tools', []) as List
-
                 return tools
                     .collect { tool ->
                         final entry = (tool as Map).entrySet().first()
                         final toolName = entry.key as String
                         final toolDescription = (entry.value as Map)?.get('description') as String
                         return [
-                            "@id"         : getToolId(moduleName, toolName),
+                            "@id"         : getToolId(process.baseName, toolName),
                             "@type"       : "SoftwareApplication",
                             "name"        : toolName,
                             "description" : toolDescription
@@ -316,9 +325,9 @@ class WrrocRenderer implements Renderer {
         final howToSteps = taskProcessors
             .collect() { process ->
                 [
-                    "@id"        : getProcessStepId(metadata.projectName, process),
+                    "@id"        : getProcessStepId(process),
                     "@type"      : "HowToStep",
-                    "workExample": ["@id": getModuleId(process)],
+                    "workExample": ["@id": getModuleId(processLookup[process])],
                     "position"   : process.getId()
                 ]
             }
@@ -330,10 +339,10 @@ class WrrocRenderer implements Renderer {
                     .collect { task -> ["@id": getTaskId(task)] }
 
                 return [
-                    "@id"       : getProcessControlId(metadata.projectName, process),
+                    "@id"       : getProcessControlId(process),
                     "@type"     : "ControlAction",
-                    "instrument": ["@id": getProcessStepId(metadata.projectName, process)],
-                    "name"      : "Orchestrate process " + process.getName(),
+                    "instrument": ["@id": getProcessStepId(process)],
+                    "name"      : "Orchestrate process ${process.name}",
                     "object"    : taskIds
                 ]
             }
@@ -345,7 +354,7 @@ class WrrocRenderer implements Renderer {
                 final name = getStagedInputName(source, session)
 
                 withoutNulls([
-                    "@id"           : "stage#${name}",
+                    "@id"           : "#stage/${name}",
                     "@type"         : getType(source),
                     "name"          : name,
                     "encodingFormat": getEncodingFormat(source),
@@ -357,7 +366,7 @@ class WrrocRenderer implements Renderer {
                 final inputs = task.getInputFilesMap().collect { name, source ->
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
-                        : ProvHelper.isStagedInput(source, session) ? "stage#${getStagedInputName(source, session)}"
+                        : ProvHelper.isStagedInput(source, session) ? "#stage/${getStagedInputName(source, session)}"
                         : normalizePath(source)
                     ["@id": id]
                 }
@@ -367,8 +376,8 @@ class WrrocRenderer implements Renderer {
                 final result = [
                     "@id"         : getTaskId(task),
                     "@type"       : "CreateAction",
-                    "name"        : task.getName(),
-                    "instrument"  : ["@id": getModuleId(task.processor)],
+                    "name"        : task.name,
+                    "instrument"  : ["@id": getModuleId(processLookup[task.processor])],
                     "agent"       : ["@id": agent["@id"]],
                     "object"      : inputs,
                     "result"      : outputs,
@@ -398,7 +407,7 @@ class WrrocRenderer implements Renderer {
                 final sourceName = getTaskOutputName(task, source)
 
                 return [
-                    "@id"         : "publish#${task.hash}/${sourceName}",
+                    "@id"         : "#publish/${task.hash}/${sourceName}",
                     "@type"       : "CreateAction",
                     "name"        : "publish",
                     "instrument"  : ["@id": softwareApplicationId],
@@ -432,7 +441,7 @@ class WrrocRenderer implements Renderer {
                         ["@id": "https://w3id.org/ro/wfrun/provenance/0.1"],
                         ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
                     ],
-                    "name"       : "Workflow run of " + manifest.name ?: metadata.projectName,
+                    "name"       : "Workflow run of ${manifest.name ?: metadata.projectName}",
                     "description": manifest.description ?: null,
                     "hasPart"    : withoutNulls([
                         ["@id": mainScriptId],
@@ -748,11 +757,10 @@ class WrrocRenderer implements Renderer {
     /**
      * Get the canonical id of a module script.
      *
-     * @param projectName
      * @param name
      */
-    private String getFormalParameterId(String projectName, String name) {
-        return "${projectName}#param#${name}"
+    private String getFormalParameterId(String name) {
+        return "#param/${name}"
     }
 
     /**
@@ -761,17 +769,16 @@ class WrrocRenderer implements Renderer {
      * @param process
      */
     private String getModuleId(ProcessDef process) {
-        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
-        return normalizePath(scriptPath)
+        return "#module/${process.baseName}"
     }
 
     /**
-     * Get the canonical id of a module script.
+     * Get the canonical url of a module script.
      *
      * @param process
      */
-    private String getModuleId(TaskProcessor process) {
-        final scriptPath = ScriptMeta.get(process.getOwnerScript()).getScriptPath().normalize()
+    private String getModuleUrl(ProcessDef process) {
+        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
         return normalizePath(scriptPath)
     }
 
@@ -782,21 +789,20 @@ class WrrocRenderer implements Renderer {
      * @param toolName
      */
     private static String getToolId(String moduleName, String toolName) {
-        return "${moduleName}#${toolName}"
+        return "#module/${moduleName}/${toolName}"
     }
 
     /**
      * Get the canonical id of a process in the workflow DAG.
      *
-     * @param projectName
      * @param process
      */
-    private static String getProcessControlId(String projectName, TaskProcessor process) {
-        return "${projectName}#control#${process.getName()}"
+    private static String getProcessControlId(TaskProcessor process) {
+        return "#process-control/${process.name}"
     }
 
-    private static String getProcessStepId(String projectName, TaskProcessor process) {
-        return "${projectName}#step#${process.getName()}"
+    private static String getProcessStepId(TaskProcessor process) {
+        return "#process-step/${process.name}"
     }
 
     /**
@@ -816,7 +822,7 @@ class WrrocRenderer implements Renderer {
      * @param task
      */
     private static String getTaskId(TaskRun task) {
-        return 'task#' + task.hash.toString()
+        return "#task/${task.hash}"
     }
 
     /**
@@ -837,11 +843,11 @@ class WrrocRenderer implements Renderer {
      * @param name
      */
     private static String getTaskOutputId(TaskRun task, String name) {
-        return "task#${task.hash}/${name}"
+        return "#task/${task.hash}/${name}"
     }
 
     private static String getTaskOutputId(TaskRun task, Path target) {
-        return "task#${task.hash}/${getTaskOutputName(task, target)}"
+        return "#task/${task.hash}/${getTaskOutputName(task, target)}"
     }
 
     /**
