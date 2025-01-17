@@ -224,7 +224,7 @@ class WrrocRenderer implements Renderer {
             }
         }
 
-        // -- input, output, and intermediate files
+        // -- input and output files
         final inputFiles = workflowInputs
             .collect { source ->
                 withoutNulls([
@@ -235,17 +235,6 @@ class WrrocRenderer implements Renderer {
                     "encodingFormat": getEncodingFormat(source),
                 ])
             }
-
-        final intermediateFiles = tasks.collectMany { task ->
-            ProvHelper.getTaskOutputs(task).collect { target ->
-                withoutNulls([
-                    "@id"           : normalizePath(target),
-                    "@type"         : getType(target),
-                    "name"          : target.name,
-                    "encodingFormat": getEncodingFormat(target),
-                ])
-            }
-        }
 
         final outputFiles = workflowOutputs
             .findAll { source, target ->
@@ -339,7 +328,7 @@ class WrrocRenderer implements Renderer {
             .collect() { process ->
                 final taskIds = tasks
                     .findAll { task -> task.processor == process }
-                    .collect { task -> ["@id": "#" + task.hash.toString()] }
+                    .collect { task -> ["@id": getTaskId(task)] }
 
                 return [
                     "@id"       : getProcessControlId(metadata.projectName, process),
@@ -353,18 +342,23 @@ class WrrocRenderer implements Renderer {
         // -- workflow execution
         final taskCreateActions = tasks
             .collect { task ->
+                final inputs = task.getInputFilesMap().collect { name, source ->
+                    final id = source in taskLookup
+                        ? getTaskOutputId(taskLookup[source], source)
+                        : normalizePath(source)
+                    ["@id": id]
+                }
+                final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
+                    ["@id": getTaskOutputId(task, target)]
+                }
                 final result = [
-                    "@id"         : "#" + task.hash.toString(),
+                    "@id"         : getTaskId(task),
                     "@type"       : "CreateAction",
                     "name"        : task.getName(),
                     "instrument"  : ["@id": getModuleId(task.processor)],
-                    "agent"       : ["@id": agent.get("@id")],
-                    "object"      : task.getInputFilesMap().collect { name, source ->
-                        ["@id": normalizePath(source)]
-                    },
-                    "result"      : ProvHelper.getTaskOutputs(task).collect { target ->
-                        ["@id": normalizePath(target)]
-                    },
+                    "agent"       : ["@id": agent["@id"]],
+                    "object"      : inputs,
+                    "result"      : outputs,
                     "actionStatus": task.exitStatus == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
                 if( task.exitStatus != 0 )
@@ -372,14 +366,30 @@ class WrrocRenderer implements Renderer {
                 return result
             }
 
+        final taskOutputs = tasks.collectMany { task ->
+            ProvHelper.getTaskOutputs(task).collect { target ->
+                final name = getTaskOutputName(task, target)
+
+                return withoutNulls([
+                    "@id"           : getTaskOutputId(task, name),
+                    "@type"         : getType(target),
+                    "name"          : name,
+                    "encodingFormat": getEncodingFormat(target),
+                ])
+            }
+        }
+
         final publishCreateActions = workflowOutputs
             .collect { source, target ->
-                [
-                    "@id"         : "publish#" + normalizePath(source),
+                final task = taskLookup[source]
+                final sourceName = getTaskOutputName(task, source)
+
+                return [
+                    "@id"         : "publish#${task.hash}/${sourceName}",
                     "@type"       : "CreateAction",
                     "name"        : "publish",
                     "instrument"  : ["@id": softwareApplicationId],
-                    "object"      : ["@id": normalizePath(source)],
+                    "object"      : ["@id": getTaskOutputId(task, sourceName)],
                     "result"      : ["@id": crateDir.relativize(target).toString()],
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ]
@@ -415,14 +425,14 @@ class WrrocRenderer implements Renderer {
                         ["@id": metadata.projectName],
                         *asReferences(datasetParts),
                         *asReferences(inputFiles),
-                        *asReferences(intermediateFiles),
                         *asReferences(outputFiles)
                     ]),
                     "mainEntity" : ["@id": metadata.projectName],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
                         *asReferences(taskCreateActions),
-                        *asReferences(publishCreateActions)
+                        *asReferences(taskOutputs),
+                        *asReferences(publishCreateActions),
                     ],
                     "license"    : manifest.license
                 ]),
@@ -520,9 +530,9 @@ class WrrocRenderer implements Renderer {
                 *propertyValues,
                 *controlActions,
                 *taskCreateActions,
+                *taskOutputs,
                 *publishCreateActions,
                 *inputFiles,
-                *intermediateFiles,
                 *outputFiles,
             ])
         ]
@@ -725,7 +735,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the canonical name of a module script.
+     * Get the canonical id of a module script.
      *
      * @param projectName
      * @param name
@@ -735,7 +745,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the canonical name of a module script.
+     * Get the canonical id of a module script.
      *
      * @param process
      */
@@ -745,7 +755,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the canonical name of a module script.
+     * Get the canonical id of a module script.
      *
      * @param process
      */
@@ -755,7 +765,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the canonical name of a tool used by a module.
+     * Get the canonical id of a tool used by a module.
      *
      * @param moduleName
      * @param toolName
@@ -765,7 +775,7 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
-     * Get the canonical name of a process in the workflow DAG.
+     * Get the canonical id of a process in the workflow DAG.
      *
      * @param projectName
      * @param process
@@ -776,6 +786,40 @@ class WrrocRenderer implements Renderer {
 
     private static String getProcessStepId(String projectName, TaskProcessor process) {
         return "${projectName}#step#${process.getName()}"
+    }
+
+    /**
+     * Get the canonical id of a task.
+     *
+     * @param task
+     */
+    private static String getTaskId(TaskRun task) {
+        return 'task#' + task.hash.toString()
+    }
+
+    /**
+     * Get the relative name of a task output.
+     *
+     * @param task
+     * @param target
+     */
+    private static String getTaskOutputName(TaskRun task, Path target) {
+        final workDir = task.workDir.toUriString()
+        return target.toUriString().replace(workDir + '/', '')
+    }
+
+    /**
+     * Get the canonical id of a task output.
+     *
+     * @param task
+     * @param name
+     */
+    private static String getTaskOutputId(TaskRun task, String name) {
+        return "task#${task.hash}/${name}"
+    }
+
+    private static String getTaskOutputId(TaskRun task, Path target) {
+        return "task#${task.hash}/${getTaskOutputName(task, target)}"
     }
 
     /**
