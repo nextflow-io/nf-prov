@@ -44,9 +44,7 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 Configuration scope for the desired output formats. The following formats are available:
 
-- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
-
-  *New in version 1.3.0*: additional "pass-through" options are available for BCO fields that can't be inferred from the pipeline. See [BCO.md](./BCO.md) for more information.
+- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options. See [BCO.md](./BCO.md) for more information about the additional config options for BCO.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
@@ -54,7 +52,7 @@ Configuration scope for the desired output formats. The following formats are av
 
 *New in version 1.4.0*
 
-- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance).
+- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](./WRROC.md) for more information about the additional config options for WRROC.
 
 Any number of formats can be specified, for example:
 

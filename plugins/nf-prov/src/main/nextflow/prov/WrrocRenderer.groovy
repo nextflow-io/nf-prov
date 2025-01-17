@@ -639,8 +639,8 @@ class WrrocRenderer implements Renderer {
             contactPoint.phone = opts.phone
         if( opts.orcid )
             contactPoint.url = opts.orcid
-        if( opts.rar )
-            contactPoint.url = opts.rar
+        if( opts.ror )
+            contactPoint.url = opts.ror
 
         contactPoints.add(contactPoint)
         return contactPointId
@@ -657,11 +657,7 @@ class WrrocRenderer implements Renderer {
         if( !opts.publisher )
             return null
 
-        final publisherOpts = opts.publisher as Map
-        if( !publisherOpts.containsKey("id") )
-            return null
-
-        final publisherId = publisherOpts.id
+        final publisherId = opts.publisher
 
         // Check if the publisher id references either the agent or the organization
         final agentId = agent?["@id"]
