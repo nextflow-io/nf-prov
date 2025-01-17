@@ -213,6 +213,8 @@ class WrrocRenderer implements Renderer {
 
         // -- copy input files from params to crate
         params.each { name, value ->
+            if( !value )
+                return
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
             if( type == "File" || type == "Dataset" ) {
