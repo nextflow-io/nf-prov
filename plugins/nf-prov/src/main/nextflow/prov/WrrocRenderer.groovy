@@ -97,12 +97,12 @@ class WrrocRenderer implements Renderer {
         final datasetParts = []
 
         // -- license
-        final license = [
-            "@id"  : manifest.license,
-            "@type": "CreativeWork"
-        ]
-
-        datasetParts.add(license)
+        if( manifest.license ) {
+            datasetParts.add([
+                "@id"  : manifest.license,
+                "@type": "CreativeWork"
+            ])
+        }
 
         // -- readme file
         for( final fileName : README_FILENAMES ) {
