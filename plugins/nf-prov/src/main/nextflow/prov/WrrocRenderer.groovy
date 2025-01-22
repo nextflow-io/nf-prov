@@ -378,7 +378,7 @@ class WrrocRenderer implements Renderer {
                     "@type"       : "CreateAction",
                     "name"        : task.name,
                     "instrument"  : ["@id": getModuleId(processLookup[task.processor])],
-                    "agent"       : ["@id": agent["@id"]],
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
                     "object"      : inputs,
                     "result"      : outputs,
                     "actionStatus": task.exitStatus == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
@@ -432,7 +432,7 @@ class WrrocRenderer implements Renderer {
                 withoutNulls([
                     "@id"        : "./",
                     "@type"      : "Dataset",
-                    "author"     : ["@id": agent["@id"]],
+                    "author"     : agent ? ["@id": agent["@id"]] : null,
                     "publisher"  : publisherId ? ["@id": publisherId] : null,
                     "datePublished": getDatePublished(),
                     "conformsTo" : [
@@ -524,7 +524,7 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"       : organizeActionId,
                     "@type"     : "OrganizeAction",
-                    "agent"     : ["@id": agent["@id"]],
+                    "agent"     : agent ? ["@id": agent["@id"]] : null,
                     "instrument": ["@id": softwareApplicationId],
                     "name"      : "Run of Nextflow ${nextflowVersion}",
                     "object"    : asReferences(controlActions),
@@ -535,7 +535,7 @@ class WrrocRenderer implements Renderer {
                 [
                     "@id"       : "#${session.uniqueId}",
                     "@type"     : "CreateAction",
-                    "agent"     : ["@id": agent["@id"]],
+                    "agent"     : agent ? ["@id": agent["@id"]] : null,
                     "name"      : "Nextflow workflow run ${session.uniqueId}",
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted,
