@@ -127,6 +127,9 @@ class WrrocRenderer implements Renderer {
         final organizeActionId = "${mainScriptId}#organize"
         metadata.scriptFile.copyTo(crateDir)
 
+        if( !metadata.repository )
+            log.warn "Could not determine pipeline repository URL for Workflow Run RO-Crate -- launch the pipeline with canonical URL (e.g. `nextflow run nextflow-io/hello`) to ensure that the pipeline repository URL is recorded in the crate"
+
         // -- parameter schema
         final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
         Map<String,Map> paramSchema = [:]
