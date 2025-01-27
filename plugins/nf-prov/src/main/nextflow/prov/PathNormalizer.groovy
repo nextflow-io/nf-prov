@@ -32,8 +32,6 @@ class PathNormalizer {
 
     private String commitId
 
-    private String launchDir
-
     private String projectDir
 
     private String workDir
@@ -42,14 +40,12 @@ class PathNormalizer {
         repository = metadata.repository ? new URL(metadata.repository) : null
         commitId = metadata.commitId
         projectDir = metadata.projectDir.toUriString()
-        launchDir = metadata.launchDir.toUriString()
         workDir = metadata.workDir.toUriString()
     }
 
     /**
-     * Normalize paths so that local absolute paths become
-     * relative paths, and local paths derived from remote URLs
-     * become the URLs.
+     * Normalize paths against the original remote URL, or
+     * work directory, where appropriate.
      *
      * @param path
      */
@@ -66,9 +62,9 @@ class PathNormalizer {
         if( repository && path.startsWith(projectDir) )
             return getProjectSourceUrl(path)
 
-        // replace launch directory with relative path
-        if( path.startsWith(launchDir) )
-            return path.replace(launchDir + '/', '')
+        // encode local absolute paths as file URLs
+        if( path.startsWith('/') )
+            return 'file://' + path
 
         return path
     }

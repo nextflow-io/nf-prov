@@ -203,18 +203,43 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- input files
+        Map<Path,String> paramInputFiles = [:]
+
+        params.each { name, value ->
+            if( !value )
+                return
+            final schema = paramSchema[name] ?: [:]
+            final type = getParameterType(name, value, schema)
+            if( type != "File" )
+                return
+            final source = (value as Path).complete()
+            // don't try to download remote files
+            if( source.fileSystem != FileSystems.default )
+                return
+            // don't try to copy local directories
+            if( !source.isFile() )
+                return
+            paramInputFiles.put(source, name)
+        }
+
         final inputFiles = workflowInputs
             .findAll { source -> !ProvHelper.isStagedInput(source, session) }
             .collect { source ->
+                final paramName = paramInputFiles[source]
+                if( paramName ) {
+                    log.debug "Copying input file specified by `params.${paramName}` into RO-Crate: ${source.toUriString()}"
+                    source.copyTo(crateDir)
+                }
+
                 withoutNulls([
-                    "@id"           : normalizePath(source),
+                    "@id"           : paramName ? source.name : normalizePath(source),
                     "@type"         : getType(source),
                     "name"          : source.name,
                     "encodingFormat": getEncodingFormat(source),
                 ])
             }
 
-        // -- copy input files from params to crate
+        // -- copy local input files specified by params to crate
         params.each { name, value ->
             if( !value )
                 return
