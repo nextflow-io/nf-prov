@@ -32,6 +32,8 @@ import nextflow.processor.TaskRun
 import nextflow.script.ProcessDef
 import nextflow.script.ScriptMeta
 import nextflow.util.ConfigHelper
+import nextflow.util.Duration
+import nextflow.util.MemoryUnit
 import org.yaml.snakeyaml.Yaml
 
 /**
@@ -191,10 +193,7 @@ class WrrocRenderer implements Renderer {
             .findAll { name, value -> value != null }
             .collect { name, value ->
                 final paramId = getFormalParameterId(name)
-                final normalized =
-                    (value instanceof List || value instanceof Map) ? JsonOutput.toJson(value)
-                    : value instanceof CharSequence ? normalizePath(value.toString())
-                    : value
+                final normalized = normalizeParamValue(value)
 
                 return [
                     "@id"          : "${paramId}/value",
@@ -718,6 +717,31 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
+     * Noraalize a parameter value.
+     *
+     * @param value
+     */
+    private Object normalizeParamValue(Object value) {
+        switch( value ) {
+            case Boolean:
+            case Number:
+                return value
+            case CharSequence:
+                return normalizePath(value.toString())
+            case List:
+            case Map:
+                return JsonOutput.toJson(value)
+            case Duration:
+                return ((Duration) value).toMillis()
+            case MemoryUnit:
+                return ((MemoryUnit) value).toBytes()
+            default:
+                log.warn "Workflow Run RO-Crate encountered parameter value of type ${value.class.name} -- JSON serialization might be incorrect"
+                return value
+        }
+    }
+
+    /**
      * Get the parameter schema of a pipeline as a map.
      *
      * @param path
@@ -781,6 +805,8 @@ class WrrocRenderer implements Renderer {
             case Boolean:
                 return "Boolean"
             case Number:
+            case Duration:
+            case MemoryUnit:
                 return "Number"
             case CharSequence:
                 return "Text"
