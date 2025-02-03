@@ -97,11 +97,14 @@ class WrrocRenderer implements Renderer {
         final datasetParts = []
 
         // -- license
-        if( manifest.license ) {
+        if( wrrocOpts.license ) {
             datasetParts.add([
-                "@id"  : manifest.license,
+                "@id"  : wrrocOpts.license,
                 "@type": "CreativeWork"
             ])
+        }
+        else {
+            log.warn "Missing license for Workflow Run RO-Crate -- the resulting crate will be invalid"
         }
 
         // -- readme file
@@ -492,7 +495,7 @@ class WrrocRenderer implements Renderer {
                         *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
                     ],
-                    "license"    : manifest.license
+                    "license"    : wrrocOpts.license
                 ]),
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",

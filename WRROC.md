@@ -17,6 +17,7 @@ The following config options are supported:
 - `prov.formats.wrroc.organization.name`
 - `prov.formats.wrroc.organization.phone`
 - `prov.formats.wrroc.organization.ror`
+- `prov.formats.wrroc.license`
 - `prov.formats.wrroc.publisher`
 
 Refer to the [WRROC User Guide](https://www.researchobject.org/workflow-run-crate/) for more information about the associated RO-Crate entities.
@@ -38,6 +39,7 @@ prov {
                 name = "University of XYZ"
                 ror = "https://ror.org/000000000"
             }
+            license = "https://spdx.org/licenses/MIT"
             publisher = "https://ror.org/000000000"
         }
     }
