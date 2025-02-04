@@ -167,6 +167,7 @@ class WrrocRenderer implements Renderer {
         // -- pipeline parameters
         // TODO: formal parameters for workflow output targets
         final formalParameters = params
+            .findAll { name, value -> value != null }
             .collect { name, value ->
                 final schema = paramSchema[name] ?: [:]
                 final type = getParameterType(name, value, schema)
