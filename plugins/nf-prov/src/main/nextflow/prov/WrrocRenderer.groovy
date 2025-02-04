@@ -175,7 +175,7 @@ class WrrocRenderer implements Renderer {
                     : null
 
                 if( !type )
-                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate"
+                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate -- the resulting crate will be invalid"
 
                 return withoutNulls([
                     "@id"           : getFormalParameterId(name),
