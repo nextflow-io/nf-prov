@@ -60,16 +60,6 @@ class ProvHelper {
     }
 
     /**
-     * Determine whether a task input file was staged into the work directory.
-     *
-     * @param source
-     * @param session
-     */
-    static boolean isStagedInput(Path source, Session session) {
-        return source.startsWith(getStageDir(session))
-    }
-
-    /**
      * Get the list of output files for a task.
      *
      * @param task
@@ -116,6 +106,28 @@ class ProvHelper {
         }
 
         return result
+    }
+
+    /**
+     * Determine whether a task input file was staged into the work directory.
+     *
+     * @param source
+     * @param session
+     */
+    static boolean isStagedInput(Path source, Session session) {
+        return source.startsWith(getStageDir(session))
+    }
+
+    /**
+     * Determine whether a task input file was created in the work/tmp/
+     * directory (i.e. by a collectFile operator).
+     *
+     * @param source
+     * @param session
+     */
+    static boolean isTmpInput(Path source, Session session) {
+        final tmpDir = session.workDir.resolve('tmp')
+        return source.startsWith(tmpDir)
     }
 
 }

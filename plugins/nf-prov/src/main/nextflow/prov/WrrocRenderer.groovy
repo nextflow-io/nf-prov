@@ -225,7 +225,9 @@ class WrrocRenderer implements Renderer {
         }
 
         final inputFiles = workflowInputs
-            .findAll { source -> !ProvHelper.isStagedInput(source, session) }
+            .findAll { source ->
+                !ProvHelper.isStagedInput(source, session) && !ProvHelper.isTmpInput(source, session)
+            }
             .collect { source ->
                 final paramName = paramInputFiles[source]
                 if( paramName ) {
@@ -397,6 +399,17 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
+        final tmpInputs = workflowInputs
+            .findAll { source -> ProvHelper.isTmpInput(source, session) }
+            .collect { source ->
+                withoutNulls([
+                    "@id"           : "#tmp/${source.name}",
+                    "@type"         : "CreativeWork",
+                    "name"          : source.name,
+                    "encodingFormat": getEncodingFormat(source),
+                ])
+            }
+
         final taskCreateActions = tasks
             .collect { task ->
                 final processDef = processLookup[task.processor]
@@ -404,6 +417,7 @@ class WrrocRenderer implements Renderer {
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
                         : ProvHelper.isStagedInput(source, session) ? "#stage/${getStagedInputName(source, session)}"
+                        : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
                         : normalizePath(source)
                     ["@id": id]
                 }
@@ -490,6 +504,7 @@ class WrrocRenderer implements Renderer {
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
                         *asReferences(stagedInputs),
+                        *asReferences(tmpInputs),
                         *asReferences(taskCreateActions),
                         *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
@@ -590,6 +605,7 @@ class WrrocRenderer implements Renderer {
                 *propertyValues,
                 *controlActions,
                 *stagedInputs,
+                *tmpInputs,
                 *taskCreateActions,
                 *taskOutputs,
                 *publishCreateActions,
