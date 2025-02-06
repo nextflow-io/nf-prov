@@ -1,6 +1,6 @@
 # nf-prov
 
-Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Object](https://biocomputeobject.org/)!
+Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Objects](https://biocomputeobject.org/)!
 
 ## Getting Started
 
@@ -92,17 +92,17 @@ mv -f settings.gradle.bkp settings.gradle
 ./gradlew assemble
 
 # Launch
-./launch.sh run test.nf -plugins nf-prov
+./launch.sh run tests/test.nf
 ```
 
 An alternative method to build and test the plugin for development purposes:
 
 ```bash
-# builds the plugin .zip and copies it to the local ${HOME}/.nextflow/plugins,
-# removing any pre-existing version
+# build the plugin and install it to ${HOME}/.nextflow/plugins
+# overwrites any previous installation with the same version
 make install
 
-# run with an externally installed nextflow using the included test workflow & config
+# run with regular nextflow install
 nextflow run tests/test.nf
 ```
 
@@ -133,6 +133,6 @@ Following these step to package, upload and publish the plugin:
     ./gradlew :plugins:nf-prov:upload
     ```
 
-4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
-  project to make the plugin public accessible to Nextflow app.
+4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) 
+  project to make the plugin public accessible to Nextflow app. 
 
