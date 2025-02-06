@@ -103,7 +103,7 @@ An alternative method to build and test the plugin for development purposes:
 make install
 
 # run with regular nextflow install
-nextflow run tests/test.nf
+nextflow run tests/test.nf -plugins nf-prov@<version>
 ```
 
 ## Package, Upload, and Publish

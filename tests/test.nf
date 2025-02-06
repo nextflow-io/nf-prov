@@ -1,45 +1,42 @@
-nextflow.enable.dsl=2
 
-process RNG {
+params.constant = "foo"
+
+process ECHO_SCRIPT {
     tag "${prefix}"
-    publishDir "${params.outdir}", mode: 'copy'
+    publishDir params.outdir, mode: 'copy'
 
     input:
     tuple val(prefix), val(constant)
 
     output:
-    tuple val(prefix), val(constant), emit: 'values'
-    path "*.txt", emit: 'file'
+    tuple val(prefix), val(constant), path("*.txt")
 
     script:
     """
     echo \$RANDOM > ${prefix}.${constant}.1.txt
     echo \$RANDOM > ${prefix}.${constant}.2.txt
     """
-
 }
 
-// shows nf-prov behavior with exec tasks
-process EXEC_FOO {
+process ECHO_EXEC {
     tag "${prefix}"
-    publishDir "${params.outdir}", mode: 'copy'
+    publishDir params.outdir, mode: 'copy'
 
     input:
     tuple val(prefix), val(constant)
 
     output:
-    path(outputfile), emit: "txt"
+    path(outfile), emit: txt
 
     exec:
-    outputfile = task.workDir.resolve("${prefix}.exec_foo.txt")
-    outputfile.write(prefix)
+    outfile = "${prefix}.exec.txt"
+    task.workDir.resolve(outfile).write(prefix)
 }
 
 workflow {
     prefixes_ch = channel.from('r1', 'r2', 'r3')
     constant_ch = channel.of(params.constant)
     inputs_ch   = prefixes_ch.combine(constant_ch)
-    RNG(inputs_ch)
-    RNG.output.values.view()
-    EXEC_FOO(inputs_ch)
+    ECHO_SCRIPT(inputs_ch)
+    ECHO_EXEC(inputs_ch)
 }
