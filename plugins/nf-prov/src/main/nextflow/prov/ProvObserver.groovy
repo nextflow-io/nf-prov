@@ -68,8 +68,10 @@ class ProvObserver implements TraceObserver {
         if( name == 'dag' )
             return new DagRenderer(opts)
 
-        if( name == 'legacy' )
+        if( name == 'legacy' ) {
+            log.warn "The legacy format is deprecated -- it will be removed in a future version"
             return new LegacyRenderer(opts)
+        }
 
         if( name == 'wrroc' )
             return new WrrocRenderer(opts)

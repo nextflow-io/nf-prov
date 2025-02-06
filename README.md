@@ -42,6 +42,8 @@ Configuration scope for the desired output formats. The following formats are av
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
+*Deprecated in version 1.4.0*
+
 - `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
 
 *New in version 1.4.0*
