@@ -4,10 +4,6 @@ Nextflow plugin to render provenance reports for pipeline runs. Now supporting [
 
 ## Getting Started
 
-The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
-
-*New in version 1.3.0: requires Nextflow 24.10.0 or later.*
-
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
 ```groovy
@@ -40,11 +36,9 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.formats`
 
-*New in version 1.2.0*
-
 Configuration scope for the desired output formats. The following formats are available:
 
-- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options. See [BCO.md](./BCO.md) for more information about the additional config options for BCO.
+- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options. See [BCO.md](docs/BCO.md) for more information about the additional config options for BCO.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
@@ -52,7 +46,7 @@ Configuration scope for the desired output formats. The following formats are av
 
 *New in version 1.4.0*
 
-- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](./WRROC.md) for more information about the additional config options for WRROC.
+- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](docs/WRROC.md) for more information about the additional config options for WRROC.
 
 Any number of formats can be specified, for example:
 
@@ -130,4 +124,3 @@ Following these step to package, upload and publish the plugin:
 
 4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
    project to make the plugin public accessible to Nextflow app.
-
