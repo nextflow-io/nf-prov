@@ -123,17 +123,14 @@ Following these step to package, upload and publish the plugin:
   * `github_access_token`:  The GitHub access token required to upload and commit changes in the plugin repository.
   * `github_commit_email`:  The email address associated with your GitHub account.
 
-2. Update the `Plugin-Version` field in the following file with the release version:
+2. Update the `Plugin-Version` field in the [manifest](./plugins/nf-prov/src/resources/META-INF/MANIFEST.MF) with the release version.
+
+3. Update the [changelog](./CHANGELOG.md).
+
+4. Build and publish the plugin to the GitHub repository:
 
    ```bash
-   plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
+   make upload
    ```
 
-3. Run the following command to package and upload the plugin in the GitHub project releases page:
-
-   ```bash
-   ./gradlew :plugins:nf-prov:upload
-   ```
-
-4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
-   project to make the plugin public accessible to Nextflow app.
+5. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) repository to make the plugin publicly accessible.
