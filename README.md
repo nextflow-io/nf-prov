@@ -65,7 +65,7 @@ prov {
 }
 ```
 
-See [nextflow.config](./nextflow.config) for a full example of each provenance format.
+See the [nf-prov-test](./nf-prov-test) directory for an example pipeline that produces every provenance format.
 
 `prov.patterns`
 
@@ -92,7 +92,18 @@ mv -f settings.gradle.bkp settings.gradle
 ./gradlew assemble
 
 # Launch
-./launch.sh run test.nf -plugins nf-prov
+./launch.sh run nf-prov-test
+```
+
+An alternative method to build and test the plugin for development purposes:
+
+```bash
+# build the plugin and install it to ${HOME}/.nextflow/plugins
+# overwrites any previous installation with the same version
+make install
+
+# run with regular nextflow install
+nextflow run nf-prov-test -plugins nf-prov@<version>
 ```
 
 ## Package, Upload, and Publish
