@@ -4,8 +4,6 @@ Nextflow plugin to render provenance reports for pipeline runs. Now supporting [
 
 ## Getting Started
 
-The `nf-prov` plugin requires Nextflow version `23.04.0` or later.
-
 To enable and configure `nf-prov`, include the following snippet to your Nextflow config and update as needed.
 
 ```groovy
@@ -24,7 +22,7 @@ prov {
 }
 ```
 
-Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically generate a JSON file with provenance information.
+Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically produce the specified provenance reports at the end of the workflow run.
 
 ## Configuration
 
@@ -38,17 +36,17 @@ Create the provenance report (default: `true` if plugin is loaded).
 
 `prov.formats`
 
-*New in version 1.2.0*
-
 Configuration scope for the desired output formats. The following formats are available:
 
-- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options.
-
-  Visit the [BCO User Guide](https://docs.biocomputeobject.org/user_guide/) to learn more about this format and how to extend it with information that isn't available to Nextflow.
+- `bco`: Render a [BioCompute Object](https://biocomputeobject.org/). Supports the `file` and `overwrite` options. See [BCO.md](docs/BCO.md) for more information about the additional config options for BCO.
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
 - `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
+
+*New in version 1.4.0*
+
+- `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](docs/WRROC.md) for more information about the additional config options for WRROC.
 
 Any number of formats can be specified, for example:
 
@@ -66,6 +64,8 @@ prov {
   }
 }
 ```
+
+See [nextflow.config](./nextflow.config) for a full example of each provenance format.
 
 `prov.patterns`
 
@@ -123,16 +123,15 @@ Following these step to package, upload and publish the plugin:
 
 2. Update the `Plugin-Version` field in the following file with the release version:
 
-    ```bash
-    plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
-    ```
+   ```bash
+   plugins/nf-prov/src/resources/META-INF/MANIFEST.MF
+   ```
 
 3. Run the following command to package and upload the plugin in the GitHub project releases page:
 
-    ```bash
-    ./gradlew :plugins:nf-prov:upload
-    ```
+   ```bash
+   ./gradlew :plugins:nf-prov:upload
+   ```
 
-4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) 
-  project to make the plugin public accessible to Nextflow app. 
-
+4. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json)
+   project to make the plugin public accessible to Nextflow app.

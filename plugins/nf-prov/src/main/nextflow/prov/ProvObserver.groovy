@@ -19,6 +19,8 @@ package nextflow.prov
 import java.nio.file.FileSystems
 import java.nio.file.Path
 import java.nio.file.PathMatcher
+import java.util.concurrent.locks.Lock
+import java.util.concurrent.locks.ReentrantLock
 
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
@@ -38,7 +40,7 @@ import nextflow.trace.TraceRecord
 @CompileStatic
 class ProvObserver implements TraceObserver {
 
-    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy']
+    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy', 'wrroc']
 
     private Session session
 
@@ -49,6 +51,8 @@ class ProvObserver implements TraceObserver {
     private Set<TaskRun> tasks = []
 
     private Map<Path,Path> workflowOutputs = [:]
+
+    private Lock lock = new ReentrantLock()
 
     ProvObserver(Map<String,Map> formats, List<String> patterns) {
         this.renderers = formats.collect( (name, config) -> createRenderer(name, config) )
@@ -67,6 +71,9 @@ class ProvObserver implements TraceObserver {
         if( name == 'legacy' )
             return new LegacyRenderer(opts)
 
+        if( name == 'wrroc' )
+            return new WrrocRenderer(opts)
+
         throw new IllegalArgumentException("Invalid provenance format -- valid formats are ${VALID_FORMATS.join(', ')}")
     }
 
@@ -82,24 +89,27 @@ class ProvObserver implements TraceObserver {
         if( !task.isSuccess() )
             return
 
-        tasks << task
+        lock.withLock {
+            tasks << task
+        }
     }
 
     @Override
     void onProcessCached(TaskHandler handler, TraceRecord trace) {
-        tasks << handler.task
+        lock.withLock {
+            tasks << handler.task
+        }
     }
 
     @Override
     void onFilePublish(Path destination, Path source) {
-        boolean match = matchers.isEmpty() || matchers.any { matcher ->
-            matcher.matches(destination)
-        }
-
+        final match = matchers.isEmpty() || matchers.any { matcher -> matcher.matches(destination) }
         if( !match )
             return
 
-        workflowOutputs[source] = destination
+        lock.withLock {
+            workflowOutputs[source] = destination
+        }
     }
 
     @Override
@@ -107,9 +117,8 @@ class ProvObserver implements TraceObserver {
         if( !session.isSuccess() )
             return
 
-        renderers.each( renderer ->
+        for( final renderer : renderers )
             renderer.render(session, tasks, workflowOutputs)
-        )
     }
 
 }

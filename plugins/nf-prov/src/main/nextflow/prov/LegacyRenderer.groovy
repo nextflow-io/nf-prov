@@ -37,7 +37,7 @@ class LegacyRenderer implements Renderer {
     private boolean overwrite
 
     LegacyRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)

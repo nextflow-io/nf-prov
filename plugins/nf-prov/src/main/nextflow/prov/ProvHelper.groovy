@@ -19,6 +19,7 @@ package nextflow.prov
 import java.nio.file.Path
 
 import groovy.transform.CompileStatic
+import nextflow.Session
 import nextflow.exception.AbortOperationException
 import nextflow.file.FileHelper
 import nextflow.processor.TaskRun
@@ -47,6 +48,15 @@ class ProvHelper {
             else if( !overwrite )
                 throw new AbortOperationException("Provenance file already exists: ${path.toUriString()}")
         }
+    }
+
+    /**
+     * Get the remote file staging directory for a workflow run.
+     *
+     * @param session
+     */
+    static Path getStageDir(Session session) {
+        return session.workDir.resolve("stage-${session.uniqueId}")
     }
 
     /**
@@ -96,6 +106,28 @@ class ProvHelper {
         }
 
         return result
+    }
+
+    /**
+     * Determine whether a task input file was staged into the work directory.
+     *
+     * @param source
+     * @param session
+     */
+    static boolean isStagedInput(Path source, Session session) {
+        return source.startsWith(getStageDir(session))
+    }
+
+    /**
+     * Determine whether a task input file was created in the work/tmp/
+     * directory (i.e. by a collectFile operator).
+     *
+     * @param source
+     * @param session
+     */
+    static boolean isTmpInput(Path source, Session session) {
+        final tmpDir = session.workDir.resolve('tmp')
+        return source.startsWith(tmpDir)
     }
 
 }

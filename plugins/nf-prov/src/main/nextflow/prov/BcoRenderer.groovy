@@ -23,9 +23,13 @@ import java.time.format.DateTimeFormatter
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
+import nextflow.SysEnv
+import nextflow.config.Manifest
 import nextflow.processor.TaskRun
 import nextflow.script.WorkflowMetadata
 import nextflow.util.CacheHelper
+
+import static nextflow.config.Manifest.ContributionType
 
 /**
  * Renderer for the BioCompute Object (BCO) format.
@@ -43,7 +47,7 @@ class BcoRenderer implements Renderer {
     private PathNormalizer normalizer
 
     BcoRenderer(Map opts) {
-        path = opts.file as Path
+        path = (opts.file as Path).complete()
         overwrite = opts.overwrite as Boolean
 
         ProvHelper.checkFileOverwrite(path, overwrite)
@@ -63,9 +67,20 @@ class BcoRenderer implements Renderer {
         final nextflowMeta = metadata.nextflow
 
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
-        final authors = (manifest.author ?: '').tokenize(',')*.trim()
+        final contributors = getContributors(manifest)
         final nextflowVersion = nextflowMeta.version.toString()
         final params = session.config.params as Map
+
+        final config = session.config
+        final review                  = config.navigate('prov.formats.bco.provenance_domain.review', []) as List<Map<String,?>>
+        final derived_from            = config.navigate('prov.formats.bco.provenance_domain.derived_from') as String
+        final obsolete_after          = config.navigate('prov.formats.bco.provenance_domain.obsolete_after') as String
+        final embargo                 = config.navigate('prov.formats.bco.provenance_domain.embargo') as Map<String,String>
+        final usability               = config.navigate('prov.formats.bco.usability_domain', []) as List<String>
+        final keywords                = config.navigate('prov.formats.bco.description_domain.keywords', []) as List<String>
+        final xref                    = config.navigate('prov.formats.bco.description_domain.xref', []) as List<Map<String,?>>
+        final external_data_endpoints = config.navigate('prov.formats.bco.execution_domain.external_data_endpoints', []) as List<Map<String,String>>
+        final environment_variables   = config.navigate('prov.formats.bco.execution_domain.environment_variables', []) as List<String>
 
         // create BCO manifest
         final bco = [
@@ -75,18 +90,20 @@ class BcoRenderer implements Renderer {
             "provenance_domain": [
                 "name": manifest.name ?: "",
                 "version": manifest.version ?: "",
+                "review": review,
+                "derived_from": derived_from,
+                "obsolete_after": obsolete_after,
+                "embargo": embargo,
                 "created": dateCreated,
                 "modified": dateCreated,
-                "contributors": authors.collect( name -> [
-                    "contribution": ["authoredBy"],
-                    "name": name
-                ] ),
-                "license": ""
+                "contributors": contributors,
+                "license": manifest.license
             ],
-            "usability_domain": [],
+            "usability_domain": usability,
             "extension_domain": [],
             "description_domain": [
-                "keywords": [],
+                "keywords": keywords,
+                "xref": xref,
                 "platform": ["Nextflow"],
                 "pipeline_steps": tasks.sort( (task) -> task.id ).collect { task -> [
                     "step_number": task.id,
@@ -112,8 +129,12 @@ class BcoRenderer implements Renderer {
                         ]
                     ]
                 ],
-                "external_data_endpoints": [],
-                "environment_variables": [:]
+                "external_data_endpoints": external_data_endpoints,
+                "environment_variables": environment_variables.inject([:]) { acc, name ->
+                    if( SysEnv.containsKey(name) )
+                        acc.put(name, SysEnv.get(name))
+                    acc
+                }
             ],
             "parametric_domain": params.toConfigObject().flatten().collect( (k, v) -> [
                 "param": k,
@@ -170,5 +191,21 @@ class BcoRenderer implements Renderer {
         // render BCO manifest to JSON file
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
     }
+
+    private List getContributors(Manifest manifest) {
+        manifest.contributors.collect { c -> [
+            "name": c.name,
+            "affiliation": c.affiliation,
+            "email": c.email,
+            "contribution": c.contribution.collect { ct -> CONTRIBUTION_TYPES[ct] },
+            "orcid": c.orcid
+        ] }
+    }
+
+    private static Map<ContributionType, String> CONTRIBUTION_TYPES = [
+        (ContributionType.AUTHOR) : "authoredBy",
+        (ContributionType.MAINTAINER) : "curatedBy",
+        (ContributionType.CONTRIBUTOR) : "curatedBy",
+    ]
 
 }
