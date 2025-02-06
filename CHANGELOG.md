@@ -4,6 +4,12 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.4.0] - 2025-02-06
+
+- Add Workflow Run RO-Crate format (#39)
+- Update test pipeline (#31)
+- Deprecate legacy format
+
 ## [1.3.0] - 2024-11-05
 
 - Add passthrough options for BCO (#36)
