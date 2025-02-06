@@ -1,6 +1,6 @@
 # nf-prov
 
-Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Objects](https://biocomputeobject.org/)!
+Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Object](https://biocomputeobject.org/)!
 
 ## Getting Started
 
