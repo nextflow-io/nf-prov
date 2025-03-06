@@ -37,15 +37,15 @@ jobs:
           architecture: x64
           distribution: 'temurin'
 
-      - name: Setup Nextflow ${{ matrix.nextflow_version }}
-        uses: nf-core/setup-nextflow@b9f764e8ba5c76b712ace14ecbfcef0e40ae2dd8 # v1
-        with:
-          version: "${{ matrix.nextflow_version }}"
-
       - name: Unit tests
         run: make test
         env:
           GRADLE_OPTS: '-Dorg.gradle.daemon=false'
+
+      - name: Setup Nextflow ${{ matrix.nextflow_version }}
+        uses: nf-core/setup-nextflow@b9f764e8ba5c76b712ace14ecbfcef0e40ae2dd8 # v1
+        with:
+          version: "${{ matrix.nextflow_version }}"
 
       - name: Install
         run: make install
