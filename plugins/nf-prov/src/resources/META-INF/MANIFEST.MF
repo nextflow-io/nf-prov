@@ -1,6 +1,0 @@
-Manifest-Version: 1.0
-Plugin-Id: nf-prov
-Plugin-Version: 1.4.0
-Plugin-Class: nextflow.prov.ProvPlugin
-Plugin-Provider: nextflow
-Plugin-Requires: >=24.10.0
