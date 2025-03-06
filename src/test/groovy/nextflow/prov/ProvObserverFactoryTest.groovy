@@ -36,7 +36,7 @@ class ProvObserverFactoryTest extends Specification {
                 ]
             ]
         ]
-        def session = Spy(Session) {
+        def session = Mock(Session) {
             getConfig() >> config
         }
         def result = new ProvObserverFactory().create(session)
