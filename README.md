@@ -75,62 +75,39 @@ List of file patterns to include in the provenance report, from the set of publi
 
 ## Development
 
-Run the following commands to build and test the nf-prov Nextflow plugin. Refer to the [nf-hello](https://github.com/nextflow-io/nf-hello) README for additional instructions (_e.g._ for publishing the plugin).
+Build and install the plugin to your local Nextflow installation:
 
 ```bash
-# (Optional) Checkout relevant feature branch
-# git checkout <branch>
-
-# Create an empty folder for nf-prov and nextflow repos
-git clone --depth 1 -b STABLE-23.10.x https://github.com/nextflow-io/nextflow ../nextflow
-
-# Prepare the nextflow repo
-cd ../nextflow && ./gradlew compile exportClasspath && cd -
-
-# Prepare the nf-prov repo
-grep -v 'includeBuild' settings.gradle > settings.gradle.bkp
-echo "includeBuild('../nextflow')" >> settings.gradle.bkp
-mv -f settings.gradle.bkp settings.gradle
-./gradlew assemble
-
-# Launch
-./launch.sh run nf-prov-test
+make install
 ```
 
-An alternative method to build and test the plugin for development purposes:
+Run with Nextflow as usual:
 
 ```bash
-# build the plugin and install it to ${HOME}/.nextflow/plugins
-# overwrites any previous installation with the same version
-make install
-
-# run with regular nextflow install
 nextflow run nf-prov-test -plugins nf-prov@<version>
 ```
 
 ## Package, Upload, and Publish
 
-The project should hosted in a GitHub repository whose name should match the name of the plugin,
-that is the name of the directory in the `plugins` folder e.g. `nf-prov` in this project.
-
 Following these step to package, upload and publish the plugin:
 
-1. Create a file named `gradle.properties` in the project root containing the following attributes
-   (this file should not be committed in the project repository):
+1. In `build.gradle` make sure that:
+   * `version` matches the desired release version,
+   * `github.repository` matches the repository of the plugin,
+   * `github.indexUrl` points to your fork of the plugins index repository.
 
-  * `github_organization`: the GitHub organisation the plugin project is hosted
-  * `github_username` The GitHub username granting access to the plugin project.
-  * `github_access_token`:  The GitHub access token required to upload and commit changes in the plugin repository.
-  * `github_commit_email`:  The email address associated with your GitHub account.
+2. Create a file named `$HOME/.gradle/gradle.properties`, where `$HOME` is your home directory. Add the following properties:
 
-2. Update the `Plugin-Version` field in the [manifest](./plugins/nf-prov/src/resources/META-INF/MANIFEST.MF) with the release version.
+   * `github_username`: The GitHub username granting access to the plugin repository.
+   * `github_access_token`: The GitHub access token required to upload and commit changes to the plugin repository.
+   * `github_commit_email`: The email address associated with your GitHub account.
 
 3. Update the [changelog](./CHANGELOG.md).
 
-4. Build and publish the plugin to the GitHub repository:
+4. Build and publish the plugin to your GitHub repository:
 
    ```bash
-   make upload
+   make release
    ```
 
 5. Create a pull request against the [nextflow-io/plugins](https://github.com/nextflow-io/plugins/blob/main/plugins.json) repository to make the plugin publicly accessible.
