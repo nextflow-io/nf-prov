@@ -26,6 +26,8 @@ Here is an example config based on the BCO User Guide:
 prov {
   formats {
     bco {
+      file = 'bco.json'
+      overwrite = true
       provenance_domain {
         review = [
           [
