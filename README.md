@@ -59,8 +59,8 @@ prov {
       file = 'bco.json'
       overwrite = true
     }
-    legacy {
-      file = 'manifest.json'
+    wrroc {
+      file = 'ro-crate-metadata.json'
       overwrite = true
     }
   }
