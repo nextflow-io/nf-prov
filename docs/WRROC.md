@@ -28,6 +28,8 @@ Here is an example config:
 prov {
     formats {
         wrroc {
+            file = "ro-crate-metadata.json"
+            overwrite = true
             agent {
                 name = "John Doe"
                 orcid = "https://orcid.org/0000-0000-0000-0000"
