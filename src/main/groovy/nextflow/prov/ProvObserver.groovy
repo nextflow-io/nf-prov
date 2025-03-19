@@ -27,6 +27,10 @@ import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.processor.TaskHandler
 import nextflow.processor.TaskRun
+import nextflow.prov.renderers.BcoRenderer
+import nextflow.prov.renderers.DagRenderer
+import nextflow.prov.renderers.LegacyRenderer
+import nextflow.prov.renderers.WrrocRenderer
 import nextflow.trace.TraceObserver
 import nextflow.trace.TraceRecord
 

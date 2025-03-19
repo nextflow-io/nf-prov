@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.prov
+package nextflow.prov.util
 
 import java.nio.file.Path
 

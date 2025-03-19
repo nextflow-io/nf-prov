@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.prov
+package nextflow.prov.renderers
 
 import java.nio.file.Path
 
@@ -22,6 +22,9 @@ import groovy.transform.CompileStatic
 import groovy.transform.TupleConstructor
 import nextflow.Session
 import nextflow.processor.TaskRun
+import nextflow.prov.Renderer
+import nextflow.prov.util.PathNormalizer
+import nextflow.prov.util.ProvHelper
 import nextflow.script.WorkflowMetadata
 import nextflow.util.StringUtils
 

@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.prov
+package nextflow.prov.renderers
 
 import java.nio.file.FileSystems
 import java.nio.file.Files
@@ -29,6 +29,9 @@ import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
+import nextflow.prov.Renderer
+import nextflow.prov.util.PathNormalizer
+import nextflow.prov.util.ProvHelper
 import nextflow.script.ProcessDef
 import nextflow.script.ScriptMeta
 import nextflow.util.ConfigHelper

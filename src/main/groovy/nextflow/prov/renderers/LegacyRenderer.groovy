@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package nextflow.prov
+package nextflow.prov.renderers
 
 import java.nio.file.Path
 
@@ -23,6 +23,8 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.file.FileHolder
 import nextflow.processor.TaskRun
+import nextflow.prov.Renderer
+import nextflow.prov.util.ProvHelper
 
 /**
  * Renderer for the legacy manifest format.
