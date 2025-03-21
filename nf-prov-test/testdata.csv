@@ -1,0 +1,2 @@
+sample,fastq_1,fastq_2
+test,https://openstack.cebitec.uni-bielefeld.de:8080/swift/v1/denbi-mg-course/read1.fq.gz,https://openstack.cebitec.uni-bielefeld.de:8080/swift/v1/denbi-mg-course/read2.fq.gz
