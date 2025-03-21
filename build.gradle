@@ -6,7 +6,7 @@ plugins {
 version = '1.5.0'
 
 nextflowPlugin {
-    nextflowVersion = '25.02.0-edge'
+    nextflowVersion = '25.02.1-edge'
 
     provider = 'nextflow'
     className = 'nextflow.prov.ProvPlugin'
@@ -25,4 +25,9 @@ nextflowPlugin {
             indexUrl = 'https://github.com/nextflow-io/plugins/blob/main/plugins.json'
         }
     }
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
 }
