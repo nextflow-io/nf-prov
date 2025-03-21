@@ -56,11 +56,8 @@ class DagRenderer implements Renderer {
         final metadata = session.workflowMetadata
         this.normalizer = new PathNormalizer(metadata)
 
-        // get workflow inputs
-        final taskLookup = ProvHelper.getTaskLookup(tasks)
-        final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
-
         // construct task graph
+        final taskLookup = ProvHelper.getTaskLookup(tasks)
         final dag = new Dag(getVertices(tasks), taskLookup)
 
         path.text = renderHtml(dag)
