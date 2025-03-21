@@ -230,7 +230,7 @@ class WrrocRenderer implements Renderer {
 
         final inputFiles = workflowInputs
             .findAll { source ->
-                !ProvHelper.isStagedInput(source, session) && !ProvHelper.isTmpInput(source, session)
+                !ProvHelper.isTmpInput(source, session)
             }
             .collect { source ->
                 final paramName = paramInputFiles[source]
@@ -430,19 +430,6 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- workflow execution
-        final stagedInputs = workflowInputs
-            .findAll { source -> ProvHelper.isStagedInput(source, session) }
-            .collect { source ->
-                final name = getStagedInputName(source, session)
-
-                withoutNulls([
-                    "@id"           : "#stage/${name}",
-                    "@type"         : "CreativeWork",
-                    "name"          : name,
-                    "encodingFormat": ProvHelper.getEncodingFormat(source),
-                ])
-            }
-
         final tmpInputs = workflowInputs
             .findAll { source -> ProvHelper.isTmpInput(source, session) }
             .collect { source ->
@@ -457,10 +444,9 @@ class WrrocRenderer implements Renderer {
         final taskCreateActions = tasks
             .collect { task ->
                 final processDef = processLookup[task.processor]
-                final inputs = task.getInputFilesMap().collect { name, source ->
+                final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
-                        : ProvHelper.isStagedInput(source, session) ? "#stage/${getStagedInputName(source, session)}"
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
                         : normalizePath(source)
                     ["@id": id]
@@ -551,7 +537,6 @@ class WrrocRenderer implements Renderer {
                     "mainEntity" : ["@id": mainScriptId],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
-                        *asReferences(stagedInputs),
                         *asReferences(tmpInputs),
                         *asReferences(taskCreateActions),
                         *asReferences(taskOutputs),
@@ -652,7 +637,6 @@ class WrrocRenderer implements Renderer {
                 *datasetParts,
                 *propertyValues,
                 *controlActions,
-                *stagedInputs,
                 *tmpInputs,
                 *taskCreateActions,
                 *taskOutputs,
@@ -956,17 +940,6 @@ class WrrocRenderer implements Renderer {
 
     private static String getProcessStepId(TaskProcessor process) {
         return "#process-step/${process.name}"
-    }
-
-    /**
-     * Get the relative name of a staged input.
-     *
-     * @param source
-     * @param session
-     */
-    private static String getStagedInputName(Path source, Session session) {
-        final stageDir = ProvHelper.getStageDir(session)
-        return stageDir.relativize(source).toString()
     }
 
     /**

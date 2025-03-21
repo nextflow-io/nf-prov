@@ -67,7 +67,7 @@ class DagRenderer implements Renderer {
     private Map<TaskRun,Vertex> getVertices(Set<TaskRun> tasks) {
         Map<TaskRun,Vertex> result = [:]
         for( final task : tasks ) {
-            final inputs = task.getInputFilesMap()
+            final inputs = ProvHelper.getTaskInputs(task)
             final outputs = ProvHelper.getTaskOutputs(task)
 
             result[task] = new Vertex(result.size(), task.name, inputs, outputs)
