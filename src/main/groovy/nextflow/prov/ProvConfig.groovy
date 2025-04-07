@@ -113,4 +113,10 @@ class ProvWrrocConfig implements ConfigScope {
         When `true` overwrites any existing Workflow Run RO-Crate with the same name.
         ''')
     boolean overwrite
+
+    @ConfigOption
+    @Description('''
+        The license for the Workflow Run RO-Crate.
+        ''')
+    String license
 }
