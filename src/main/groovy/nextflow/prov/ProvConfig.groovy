@@ -31,7 +31,6 @@ class ProvConfig implements ConfigScope {
     @Description('Create the provenance report (default: `true` if plugin is loaded).')
     boolean enabled
 
-    @ConfigOption
     @Description('Configuration scope for the desired output formats.')
     ProvFormatsConfig formats
 }
