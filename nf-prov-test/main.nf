@@ -1,9 +1,10 @@
 
+nextflow.preview.output = true
+
 params.constant = "foo"
 
 process ECHO_SCRIPT {
     tag "${prefix}"
-    publishDir params.outdir, mode: 'copy'
 
     input:
     tuple val(prefix), val(constant)
@@ -20,7 +21,6 @@ process ECHO_SCRIPT {
 
 process ECHO_EXEC {
     tag "${prefix}"
-    publishDir params.outdir, mode: 'copy'
 
     input:
     tuple val(prefix), val(constant)
@@ -45,6 +45,7 @@ process WC_SAMPLE {
 }
 
 workflow {
+    main:
     prefixes_ch = channel.of('r1', 'r2', 'r3')
     constant_ch = channel.value(params.constant)
     inputs_ch   = prefixes_ch.combine(constant_ch)
@@ -53,4 +54,24 @@ workflow {
 
     samples_ch = channel.fromPath(params.input).splitCsv(header: true)
     WC_SAMPLE(samples_ch)
+
+    publish:
+    script = ECHO_SCRIPT.out
+    exec = ECHO_EXEC.out
+}
+
+output {
+    script {
+        path 'script'
+        index {
+            path 'script.json'
+        }
+    }
+
+    exec {
+        path 'exec'
+        index {
+            path 'exec.json'
+        }
+    }
 }

@@ -28,27 +28,52 @@ import nextflow.script.dsl.Description
 class ProvConfig implements ConfigScope {
 
     @ConfigOption
-    @Description('Create the provenance report (default: `true` if plugin is loaded).')
-    boolean enabled
+    @Description('''
+        Create the provenance report (default: `true` if plugin is loaded).
+    ''')
+    final boolean enabled
 
-    @Description('Configuration scope for the desired output formats.')
-    ProvFormatsConfig formats
+    @Description('''
+        Configuration scope for the desired output formats.
+    ''')
+    final ProvFormatsConfig formats
+
+    @Description('''
+        List of file patterns to include in the provenance report, from the set of published files. By default, all published files are included.
+    ''')
+    final List<String> patterns
+
+    /* required by extension point -- do not remove */
+    ProvConfig() {}
+
+    ProvConfig(Map opts) {
+        enabled = opts.enabled != null ? opts.enabled as boolean : true
+        formats = opts.formats ? new ProvFormatsConfig(opts.formats as Map) : null
+        patterns = opts.patterns as List<String> ?: []
+    }
 }
 
 
 class ProvFormatsConfig implements ConfigScope {
 
     @Description('Configuration scope for the BCO output format.')
-    ProvBcoConfig bco
+    final ProvBcoConfig bco
 
     @Description('Configuration scope for the DAG output format.')
-    ProvDagConfig dag
+    final ProvDagConfig dag
 
     @Description('Configuration scope for the legacy output format.')
-    ProvLegacyConfig legacy
+    final ProvLegacyConfig legacy
 
     @Description('Configuration scope for the WRROC output format.')
-    ProvWrrocConfig wrroc
+    final ProvWrrocConfig wrroc
+
+    ProvFormatsConfig(Map opts) {
+        bco = opts.bco ? new ProvBcoConfig(opts.bco as Map) : null
+        dag = opts.dag ? new ProvDagConfig(opts.dag as Map) : null
+        legacy = opts.legacy ? new ProvLegacyConfig(opts.legacy as Map) : null
+        wrroc = opts.wrroc ? new ProvWrrocConfig(opts.wrroc as Map) : null
+    }
 }
 
 
@@ -57,14 +82,19 @@ class ProvBcoConfig implements ConfigScope {
     @ConfigOption
     @Description('''
         The file name of the BCO manifest.
-        ''')
-    String file
+    ''')
+    final String file
 
     @ConfigOption
     @Description('''
         When `true` overwrites any existing BCO manifest with the same name.
-        ''')
-    boolean overwrite
+    ''')
+    final boolean overwrite
+
+    ProvBcoConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+    }
 }
 
 
@@ -73,14 +103,19 @@ class ProvDagConfig implements ConfigScope {
     @ConfigOption
     @Description('''
         The file name of the DAG diagram.
-        ''')
+    ''')
     String file
 
     @ConfigOption
     @Description('''
         When `true` overwrites any existing DAG diagram with the same name.
-        ''')
+    ''')
     boolean overwrite
+
+    ProvDagConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+    }
 }
 
 
@@ -89,14 +124,19 @@ class ProvLegacyConfig implements ConfigScope {
     @ConfigOption
     @Description('''
         The file name of the legacy manifest.
-        ''')
-    String file
+    ''')
+    final String file
 
     @ConfigOption
     @Description('''
         When `true` overwrites any existing legacy manifest with the same name.
-        ''')
-    boolean overwrite
+    ''')
+    final boolean overwrite
+
+    ProvLegacyConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+    }
 }
 
 
@@ -105,18 +145,24 @@ class ProvWrrocConfig implements ConfigScope {
     @ConfigOption
     @Description('''
         The file name of the Workflow Run RO-Crate.
-        ''')
-    String file
+    ''')
+    final String file
 
     @ConfigOption
     @Description('''
         When `true` overwrites any existing Workflow Run RO-Crate with the same name.
-        ''')
-    boolean overwrite
+    ''')
+    final boolean overwrite
 
     @ConfigOption
     @Description('''
         The license for the Workflow Run RO-Crate.
-        ''')
-    String license
+    ''')
+    final String license
+
+    ProvWrrocConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+        license = opts.license
+    }
 }

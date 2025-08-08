@@ -22,10 +22,11 @@ import groovy.transform.CompileStatic
 import groovy.transform.TupleConstructor
 import nextflow.Session
 import nextflow.processor.TaskRun
+import nextflow.prov.ProvDagConfig
 import nextflow.prov.Renderer
-import nextflow.prov.util.PathNormalizer
 import nextflow.prov.util.ProvHelper
 import nextflow.script.WorkflowMetadata
+import nextflow.util.PathNormalizer
 import nextflow.util.StringUtils
 
 /**
@@ -43,15 +44,15 @@ class DagRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
-    DagRenderer(Map opts) {
-        path = (opts.file as Path).complete()
-        overwrite = opts.overwrite as Boolean
+    DagRenderer(ProvDagConfig config) {
+        path = (config.file as Path).complete()
+        overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
         // get workflow metadata
         final metadata = session.workflowMetadata
         this.normalizer = new PathNormalizer(metadata)

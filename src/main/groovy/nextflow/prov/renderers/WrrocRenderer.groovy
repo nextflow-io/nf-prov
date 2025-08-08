@@ -29,14 +29,15 @@ import groovy.util.logging.Slf4j
 import nextflow.Session
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
+import nextflow.prov.ProvWrrocConfig
 import nextflow.prov.Renderer
-import nextflow.prov.util.PathNormalizer
 import nextflow.prov.util.ProvHelper
 import nextflow.script.ProcessDef
 import nextflow.script.ScriptMeta
 import nextflow.util.ConfigHelper
 import nextflow.util.Duration
 import nextflow.util.MemoryUnit
+import nextflow.util.PathNormalizer
 import org.yaml.snakeyaml.Yaml
 
 /**
@@ -62,15 +63,15 @@ class WrrocRenderer implements Renderer {
     // List of contact points (people, organizations) to be added
     private List<Map> contactPoints = []
 
-    WrrocRenderer(Map opts) {
-        path = (opts.file as Path).complete()
-        overwrite = opts.overwrite as Boolean
+    WrrocRenderer(ProvWrrocConfig config) {
+        path = (config.file as Path).complete()
+        overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
@@ -124,7 +125,7 @@ class WrrocRenderer implements Renderer {
                 "@type"         : "File",
                 "name"          : fileName,
                 "description"   : "The README file of the workflow.",
-                "encodingFormat": getEncodingFormat(readmePath) ?: "text/plain"
+                "encodingFormat": ProvHelper.getEncodingFormat(readmePath) ?: "text/plain"
             ])
             break
         }
@@ -168,21 +169,20 @@ class WrrocRenderer implements Renderer {
         ])
 
         // -- pipeline parameters
-        // TODO: formal parameters for workflow output targets
-        final formalParameters = params
+        final inputParameters = params
             .findAll { name, value -> value != null }
             .collect { name, value ->
                 final schema = paramSchema[name] ?: [:]
                 final type = getParameterType(name, value, schema)
                 final encoding = type == "File"
-                    ? getEncodingFormat(value as Path)
+                    ? ProvHelper.getEncodingFormat(value as Path)
                     : null
 
                 if( !type )
                     log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate -- the resulting crate will be invalid"
 
                 return withoutNulls([
-                    "@id"           : getFormalParameterId(name),
+                    "@id"           : getWorkflowParamId(name),
                     "@type"         : "FormalParameter",
                     "additionalType": type,
                     "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
@@ -193,10 +193,10 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final propertyValues = params
+        final inputValues = params
             .findAll { name, value -> value != null }
             .collect { name, value ->
-                final paramId = getFormalParameterId(name)
+                final paramId = getWorkflowParamId(name)
                 final normalized = normalizeParamValue(value)
 
                 return [
@@ -205,7 +205,7 @@ class WrrocRenderer implements Renderer {
                     "exampleOfWork": ["@id": paramId],
                     "name"         : name,
                     "value"        : normalized
-                ]
+                ] as Map
             }
 
         // -- input files
@@ -243,7 +243,7 @@ class WrrocRenderer implements Renderer {
                     "@id"           : paramName ? source.name : normalizePath(source),
                     "@type"         : getType(source),
                     "name"          : source.name,
-                    "encodingFormat": getEncodingFormat(source),
+                    "encodingFormat": ProvHelper.getEncodingFormat(source),
                 ])
             }
 
@@ -265,15 +265,55 @@ class WrrocRenderer implements Renderer {
                     "@id"           : source.name,
                     "@type"         : type,
                     "description"   : "Input file specified by params.${name}",
-                    "encodingFormat": getEncodingFormat(source)
+                    "encodingFormat": ProvHelper.getEncodingFormat(source)
                 ]))
                 log.debug "Copying input file specified by params.${name} into RO-Crate: ${source.toUriString()}"
                 source.copyTo(crateDir)
             }
         }
 
+        // -- pipeline outputs
+        if( workflowOutputs == null )
+            workflowOutputs = [:]
+
+        final outputParameters = workflowOutputs
+            .findAll { name, value -> value != null }
+            .collect { name, value ->
+                final type = getParameterType(name, value, null)
+                final encoding = type == "File"
+                    ? ProvHelper.getEncodingFormat(value as Path)
+                    : null
+
+                if( !type )
+                    log.warn "Could not determine type of workflow output `${name}` for Workflow Run RO-Crate -- the resulting crate will be invalid"
+
+                return withoutNulls([
+                    "@id"           : getWorkflowOutputId(name),
+                    "@type"         : "FormalParameter",
+                    "additionalType": type,
+                    "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
+                    "encodingFormat": encoding,
+                    "name"          : name,
+                ])
+            }
+
+        final outputValues = workflowOutputs
+            .findAll { name, value -> value != null }
+            .collect { name, value ->
+                final outputId = getWorkflowOutputId(name)
+                final normalized = getWorkflowOutputPath(value, session)
+
+                return [
+                    "@id"          : "${outputId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": outputId],
+                    "name"         : name,
+                    "value"        : normalized
+                ] as Map
+            }
+
         // -- output files
-        final outputFiles = workflowOutputs
+        final outputFiles = publishedFiles
             .findAll { source, target ->
                 // warn about any output files outside of the crate directory
                 final result = target.startsWith(crateDir)
@@ -286,7 +326,7 @@ class WrrocRenderer implements Renderer {
                     "@id"           : crateDir.relativize(target).toString(),
                     "@type"         : getType(target),
                     "name"          : target.name,
-                    "encodingFormat": getEncodingFormat(target),
+                    "encodingFormat": ProvHelper.getEncodingFormat(target),
                 ])
             }
 
@@ -399,7 +439,7 @@ class WrrocRenderer implements Renderer {
                     "@id"           : "#stage/${name}",
                     "@type"         : "CreativeWork",
                     "name"          : name,
-                    "encodingFormat": getEncodingFormat(source),
+                    "encodingFormat": ProvHelper.getEncodingFormat(source),
                 ])
             }
 
@@ -410,7 +450,7 @@ class WrrocRenderer implements Renderer {
                     "@id"           : "#tmp/${source.name}",
                     "@type"         : "CreativeWork",
                     "name"          : source.name,
-                    "encodingFormat": getEncodingFormat(source),
+                    "encodingFormat": ProvHelper.getEncodingFormat(source),
                 ])
             }
 
@@ -451,12 +491,13 @@ class WrrocRenderer implements Renderer {
                     "@id"           : getTaskOutputId(task, name),
                     "@type"         : "CreativeWork",
                     "name"          : name,
-                    "encodingFormat": getEncodingFormat(target),
+                    "encodingFormat": ProvHelper.getEncodingFormat(target),
                 ])
             }
         }
 
-        final publishCreateActions = workflowOutputs
+        final publishCreateActions = publishedFiles
+            .findAll { source, target -> source in taskLookup }
             .collect { source, target ->
                 final task = taskLookup[source]
                 final sourceName = getTaskOutputName(task, source)
@@ -471,6 +512,9 @@ class WrrocRenderer implements Renderer {
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ]
             }
+
+        final formalParameters = inputParameters + outputParameters
+        final propertyValues = inputValues + outputValues
 
         final wrroc = [
             "@context": "https://w3id.org/ro/crate/1.1/context",
@@ -833,18 +877,43 @@ class WrrocRenderer implements Renderer {
             case List:
             case Map:
                 return "Text"
+            case Path:
+                return getType(value as Path)
             default:
                 return null
         }
     }
 
     /**
-     * Get the canonical id of a module script.
+     * Get the canonical id of a workflow parameter.
      *
      * @param name
      */
-    private String getFormalParameterId(String name) {
+    private String getWorkflowParamId(String name) {
         return "#param/${name}"
+    }
+
+    /**
+     * Get the canonical id of a workflow output.
+     *
+     * @param name
+     */
+    private String getWorkflowOutputId(String name) {
+        return "#output/${name}"
+    }
+
+    /**
+     * Get the relative path of a workflow output.
+     *
+     * @param path
+     * @param session
+     */
+    private String getWorkflowOutputPath(Path path, Session session) {
+        final outputDir = session.outputDir.toAbsolutePath()
+        if( path.startsWith(outputDir) )
+            return outputDir.relativize(path).toString()
+        log.warn "Cannot get relative path for workflow output '${path.toUriString()}'"
+        return null
     }
 
     /**
@@ -956,29 +1025,6 @@ class WrrocRenderer implements Renderer {
         return path.isDirectory()
             ? "Dataset"
             : "File"
-    }
-
-    /**
-     * Get the encodingFormat of a file as MIME Type.
-     *
-     * @param path Path to file
-     * @return the MIME type of the file, or null if it's not a file.
-     */
-    private static String getEncodingFormat(Path path) {
-        if( !(path && path.exists() && path.isFile()) )
-            return null
-
-        String mime = Files.probeContentType(path)
-        if( mime )
-            return mime
-
-        // It seems that YAML has a media type only since beginning of 2024
-        // Set this by hand if this is run on older systems:
-        // https://httptoolkit.com/blog/yaml-media-type-rfc/
-        if( ["yml", "yaml"].contains(path.getExtension()) )
-            return "application/yaml"
-
-        return null
     }
 
     private static List asReferences(List values) {

@@ -27,6 +27,6 @@ import nextflow.processor.TaskRun
  */
 interface Renderer {
 
-    abstract void render(Session session, Set<TaskRun> tasks, Map<Path,Path> outputs)
+    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles)
 
 }

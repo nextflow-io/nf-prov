@@ -16,14 +16,11 @@
 
 package nextflow.prov
 
-import java.nio.file.Path
-
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
-import nextflow.exception.AbortOperationException
-import nextflow.trace.TraceObserver
-import nextflow.trace.TraceObserverFactory
+import nextflow.trace.TraceObserverV2
+import nextflow.trace.TraceObserverFactoryV2
 
 /**
  * Factory for the plugin observer
@@ -32,36 +29,25 @@ import nextflow.trace.TraceObserverFactory
  */
 @Slf4j
 @CompileStatic
-class ProvObserverFactory implements TraceObserverFactory {
+class ProvObserverFactory implements TraceObserverFactoryV2 {
 
     @Override
-    Collection<TraceObserver> create(Session session) {
-        final observer = createProvObserver(session.config)
-        observer ? [ observer ] : []
+    Collection<TraceObserverV2> create(Session session) {
+        final observer = createProvObserver(session)
+        return observer ? [ observer ] : []
     }
 
-    protected TraceObserver createProvObserver(Map config) {
-        final enabled = config.navigate('prov.enabled', true) as Boolean
-        if( !enabled )
+    protected TraceObserverV2 createProvObserver(Session session) {
+        final opts = session.config.prov as Map ?: Collections.emptyMap()
+        final config = new ProvConfig(opts)
+        if( !config.enabled )
             return null
 
-        final format = config.navigate('prov.format') as String
-        final file = config.navigate('prov.file', 'manifest.json') as String
-        final overwrite = config.navigate('prov.overwrite') as Boolean
-        def formats = [:]
-        if( format ) {
-            log.warn "Config options `prov.format`, `prov.file`, and `prov.overwrite` are deprecated -- use `prov.formats` instead"
-            formats[format] = [file: file, overwrite: overwrite]
-        }
-
-        formats = config.navigate('prov.formats', formats) as Map
-
-        if( !formats ) {
+        if( !config.formats ) {
             log.warn "Config setting `prov.formats` is not defined, no provenance reports will be produced"
             return null
         }
 
-        final patterns = config.navigate('prov.patterns', []) as List<String>
-        new ProvObserver(formats, patterns)
+        return new ProvObserver(config.formats, config.patterns)
     }
 }
