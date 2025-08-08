@@ -16,6 +16,8 @@
 
 package nextflow.prov
 
+import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
 import nextflow.config.schema.ConfigOption
 import nextflow.config.schema.ConfigScope
 import nextflow.config.schema.ScopeName
@@ -25,6 +27,7 @@ import nextflow.script.dsl.Description
 @Description('''
     The `prov` scope allows you to configure the `nf-prov` plugin.
 ''')
+@CompileStatic
 class ProvConfig implements ConfigScope {
 
     @ConfigOption
@@ -54,29 +57,37 @@ class ProvConfig implements ConfigScope {
 }
 
 
+@Slf4j
+@CompileStatic
 class ProvFormatsConfig implements ConfigScope {
 
-    @Description('Configuration scope for the BCO output format.')
+    @Description('''
+        Configuration scope for the BCO output format.
+    ''')
     final ProvBcoConfig bco
 
-    @Description('Configuration scope for the DAG output format.')
+    @Description('''
+        Configuration scope for the DAG output format.
+    ''')
     final ProvDagConfig dag
 
-    @Description('Configuration scope for the legacy output format.')
-    final ProvLegacyConfig legacy
-
-    @Description('Configuration scope for the WRROC output format.')
+    @Description('''
+        Configuration scope for the WRROC output format.
+    ''')
     final ProvWrrocConfig wrroc
 
     ProvFormatsConfig(Map opts) {
         bco = opts.bco ? new ProvBcoConfig(opts.bco as Map) : null
         dag = opts.dag ? new ProvDagConfig(opts.dag as Map) : null
-        legacy = opts.legacy ? new ProvLegacyConfig(opts.legacy as Map) : null
         wrroc = opts.wrroc ? new ProvWrrocConfig(opts.wrroc as Map) : null
+
+        if( opts.legacy )
+            log.warn "The `legacy` provenance format is no longer supported"
     }
 }
 
 
+@CompileStatic
 class ProvBcoConfig implements ConfigScope {
 
     @ConfigOption
@@ -87,7 +98,7 @@ class ProvBcoConfig implements ConfigScope {
 
     @ConfigOption
     @Description('''
-        When `true` overwrites any existing BCO manifest with the same name.
+        When `true` overwrites any existing BCO manifest with the same name (default: `false`).
     ''')
     final boolean overwrite
 
@@ -98,6 +109,7 @@ class ProvBcoConfig implements ConfigScope {
 }
 
 
+@CompileStatic
 class ProvDagConfig implements ConfigScope {
 
     @ConfigOption
@@ -108,7 +120,7 @@ class ProvDagConfig implements ConfigScope {
 
     @ConfigOption
     @Description('''
-        When `true` overwrites any existing DAG diagram with the same name.
+        When `true` overwrites any existing DAG diagram with the same name (default: `false`).
     ''')
     boolean overwrite
 
@@ -119,27 +131,7 @@ class ProvDagConfig implements ConfigScope {
 }
 
 
-class ProvLegacyConfig implements ConfigScope {
-
-    @ConfigOption
-    @Description('''
-        The file name of the legacy manifest.
-    ''')
-    final String file
-
-    @ConfigOption
-    @Description('''
-        When `true` overwrites any existing legacy manifest with the same name.
-    ''')
-    final boolean overwrite
-
-    ProvLegacyConfig(Map opts) {
-        file = opts.file
-        overwrite = opts.overwrite as boolean
-    }
-}
-
-
+@CompileStatic
 class ProvWrrocConfig implements ConfigScope {
 
     @ConfigOption
@@ -150,7 +142,7 @@ class ProvWrrocConfig implements ConfigScope {
 
     @ConfigOption
     @Description('''
-        When `true` overwrites any existing Workflow Run RO-Crate with the same name.
+        When `true` overwrites any existing Workflow Run RO-Crate with the same name (default: `false`).
     ''')
     final boolean overwrite
 

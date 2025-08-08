@@ -1,6 +1,17 @@
 # nf-prov
 
-Nextflow plugin to render provenance reports for pipeline runs. Now supporting [BioCompute Object](https://biocomputeobject.org/)!
+Nextflow plugin to render provenance reports for pipeline runs. Supports standard formats such as [BioCompute Object](https://biocomputeobject.org/) and [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/).
+
+## Requirements
+
+| Version |	Minimum Nextflow version |
+| ------- | ------------------------ |
+| 1.5.x   | 25.04 |
+| 1.4.x   | 24.10 |
+| 1.3.x   | 24.10 |
+| 1.2.x   | 23.04 |
+| 1.1.x   | 23.04 |
+| 1.0.x   | 22.04 |
 
 ## Getting Started
 
@@ -14,19 +25,27 @@ plugins {
 prov {
   enabled = true
   formats {
-    legacy {
-      file = 'manifest.json'
+    bco {
+      file = 'bco.json'
+      overwrite = true
+    }
+    wrroc {
+      file = 'ro-crate-metadata.json'
       overwrite = true
     }
   }
 }
 ```
 
-Finally, run your Nextflow pipeline. You do not need to modify your pipeline script in order to use the `nf-prov` plugin. The plugin will automatically produce the specified provenance reports at the end of the workflow run.
+Any number of formats can be specified. You do not need to modify your pipeline script in order to use the `nf-prov` plugin.
+
+When you run your Nextflow pipeline, the plugin will automatically produce the specified provenance reports at the end of the run.
 
 ## Configuration
 
 *The `file`, `format`, and `overwrite` options have been deprecated since version 1.2.0. Use `formats` instead.*
+
+*The `legacy` format was removed in version 1.5.0. Consider using [data lineage](https://nextflow.io/docs/latest/data-lineage.html) instead.*
 
 The following options are available:
 
@@ -42,30 +61,9 @@ Configuration scope for the desired output formats. The following formats are av
 
 - `dag`: Render the task graph as a Mermaid diagram embedded in an HTML document. Supports the `file` and `overwrite` options.
 
-*Deprecated in version 1.4.0*
-
-- `legacy`: Render the legacy format originally defined in this plugin (default). Supports the `file` and `overwrite` options.
-
 *New in version 1.4.0*
 
 - `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](docs/WRROC.md) for more information about the additional config options for WRROC.
-
-Any number of formats can be specified, for example:
-
-```groovy
-prov {
-  formats {
-    bco {
-      file = 'bco.json'
-      overwrite = true
-    }
-    wrroc {
-      file = 'ro-crate-metadata.json'
-      overwrite = true
-    }
-  }
-}
-```
 
 See the [nf-prov-test](./nf-prov-test) directory for an example pipeline that produces every provenance format.
 

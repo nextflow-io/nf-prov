@@ -44,7 +44,7 @@ class ProvObserverFactory implements TraceObserverFactoryV2 {
             return null
 
         if( !config.formats ) {
-            log.warn "Config setting `prov.formats` is not defined, no provenance reports will be produced"
+            log.warn "Config setting `prov.formats` is not defined -- no provenance reports will be produced"
             return null
         }
 
