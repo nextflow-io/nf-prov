@@ -16,7 +16,6 @@
 
 package nextflow.prov.renderers
 
-import java.nio.file.Files
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
@@ -26,11 +25,12 @@ import nextflow.Session
 import nextflow.SysEnv
 import nextflow.config.Manifest
 import nextflow.processor.TaskRun
+import nextflow.prov.ProvBcoConfig
 import nextflow.prov.Renderer
-import nextflow.prov.util.PathNormalizer
 import nextflow.prov.util.ProvHelper
 import nextflow.script.WorkflowMetadata
 import nextflow.util.CacheHelper
+import nextflow.util.PathNormalizer
 
 import static nextflow.config.Manifest.ContributionType
 
@@ -49,15 +49,15 @@ class BcoRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
-    BcoRenderer(Map opts) {
-        path = (opts.file as Path).complete()
-        overwrite = opts.overwrite as Boolean
+    BcoRenderer(ProvBcoConfig config) {
+        path = (config.file as Path).complete()
+        overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> workflowOutputs) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
@@ -150,8 +150,8 @@ class BcoRenderer implements Renderer {
                         "uri": normalizePath(source)
                     ]
                 ] },
-                "output_subdomain": workflowOutputs.collect { source, target -> [
-                    "mediatype": Files.probeContentType(source) ?: "",
+                "output_subdomain": publishedFiles.collect { source, target -> [
+                    "mediatype": ProvHelper.getEncodingFormat(source) ?: "",
                     "uri": [
                         "filename": normalizePath(source),
                         "uri": normalizePath(target)

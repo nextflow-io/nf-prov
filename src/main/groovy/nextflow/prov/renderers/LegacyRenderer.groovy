@@ -23,6 +23,7 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.file.FileHolder
 import nextflow.processor.TaskRun
+import nextflow.prov.ProvLegacyConfig
 import nextflow.prov.Renderer
 import nextflow.prov.util.ProvHelper
 
@@ -38,9 +39,9 @@ class LegacyRenderer implements Renderer {
 
     private boolean overwrite
 
-    LegacyRenderer(Map opts) {
-        path = (opts.file as Path).complete()
-        overwrite = opts.overwrite as Boolean
+    LegacyRenderer(ProvLegacyConfig config) {
+        path = (config.file as Path).complete()
+        overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)
     }
@@ -93,7 +94,7 @@ class LegacyRenderer implements Renderer {
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<Path,Path> outputs) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
         // generate task manifest
         def tasksMap = tasks.inject([:]) { accum, task ->
             accum[task.id] = renderTask(task)
@@ -116,7 +117,7 @@ class LegacyRenderer implements Renderer {
         // render JSON output
         def manifest = [
             'pipeline': session.config.manifest,
-            'published': outputs.collect { source, target -> [
+            'published': publishedFiles.collect { source, target -> [
                 'source': source.toUriString(),
                 'target': target.toUriString(),
                 'publishingTaskId': taskLookup[source.toUriString()],

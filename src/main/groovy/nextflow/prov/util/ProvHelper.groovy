@@ -16,6 +16,7 @@
 
 package nextflow.prov.util
 
+import java.nio.file.Files
 import java.nio.file.Path
 
 import groovy.transform.CompileStatic
@@ -48,6 +49,28 @@ class ProvHelper {
             else if( !overwrite )
                 throw new AbortOperationException("Provenance file already exists: ${path.toUriString()}")
         }
+    }
+
+    /**
+     * Get the encodingFormat of a file as MIME Type.
+     *
+     * @param path Path to file
+     */
+    static String getEncodingFormat(Path path) {
+        if( !path || !path.isFile() )
+            return null
+
+        final mime = Files.probeContentType(path)
+        if( mime )
+            return mime
+
+        // It seems that YAML has a media type only since beginning of 2024
+        // Set this by hand if this is run on older systems:
+        // https://httptoolkit.com/blog/yaml-media-type-rfc/
+        if( ["yml", "yaml"].contains(path.getExtension()) )
+            return "application/yaml"
+
+        return null
     }
 
     /**
