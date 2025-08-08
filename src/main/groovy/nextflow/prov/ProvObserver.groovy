@@ -28,7 +28,6 @@ import nextflow.Session
 import nextflow.processor.TaskRun
 import nextflow.prov.renderers.BcoRenderer
 import nextflow.prov.renderers.DagRenderer
-import nextflow.prov.renderers.LegacyRenderer
 import nextflow.prov.renderers.WrrocRenderer
 import nextflow.trace.TraceObserverV2
 import nextflow.trace.event.FilePublishEvent
@@ -76,11 +75,6 @@ class ProvObserver implements TraceObserverV2 {
 
         if( config.dag )
             result.add(new DagRenderer(config.dag))
-
-        if( config.legacy ) {
-            log.warn "The legacy format is deprecated -- it will be removed in a future version"
-            result.add(new LegacyRenderer(config.legacy))
-        }
 
         if( config.wrroc )
             result.add(new WrrocRenderer(config.wrroc))
@@ -158,7 +152,6 @@ class ProvObserver implements TraceObserverV2 {
         return switch( renderer ) {
             case BcoRenderer -> 'BCO';
             case DagRenderer -> 'DAG';
-            case LegacyRenderer -> 'legacy';
             case WrrocRenderer -> 'WRROC';
             default -> null;
         }
