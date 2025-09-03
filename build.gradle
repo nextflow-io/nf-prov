@@ -1,6 +1,6 @@
 
 plugins {
-    id 'io.nextflow.nextflow-plugin' version '0.0.1-alpha3'
+    id 'io.nextflow.nextflow-plugin' version '1.0.0-beta.6'
 }
 
 version = '1.5.0'
@@ -14,15 +14,4 @@ nextflowPlugin {
         'nextflow.prov.ProvConfig',
         'nextflow.prov.ProvObserverFactory'
     ]
-
-    publishing {
-        github {
-            repository = 'nextflow-io/nf-prov'
-            userName = project.findProperty('github_username')
-            authToken = project.findProperty('github_access_token')
-            email = project.findProperty('github_commit_email')
-
-            indexUrl = 'https://github.com/nextflow-io/plugins/blob/main/plugins.json'
-        }
-    }
 }
