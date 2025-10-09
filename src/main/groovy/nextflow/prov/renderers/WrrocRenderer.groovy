@@ -19,6 +19,7 @@ package nextflow.prov.renderers
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -90,6 +91,12 @@ class WrrocRenderer implements Renderer {
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = metadata.nextflow.version.toString()
         final params = session.params
+
+        // get various pipeline_info configurations
+        final reportOpts = session.config.navigate('report', [:]) as Map
+        final timelineOpts = session.config.navigate('timeline', [:]) as Map
+        final dagOpts = session.config.navigate('dag', [:]) as Map
+        final traceOpts = session.config.navigate('trace', [:]) as Map
 
         // parse wrroc configuration
         final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
@@ -207,6 +214,51 @@ class WrrocRenderer implements Renderer {
                     "value"        : normalized
                 ] as Map
             }
+
+        // -- pipeline_info files
+        if(reportOpts.enabled) {
+            Path relativeReportPath = crateDir.relativize(Paths.get(reportOpts.file.toString()))
+            datasetParts.add([
+                "@id"           : relativeReportPath.toString(),
+                "@type"         : "File",
+                "name"          : relativeReportPath.getFileName().toString(),
+                "description"   : "Nextflow execution report",
+                "encodingFormat": "text/html"
+            ])
+        }
+
+        if(timelineOpts.enabled) {
+            Path relativeTimelinePath = crateDir.relativize(Paths.get(timelineOpts.file.toString()))
+            datasetParts.add([
+                "@id"           : relativeTimelinePath.toString(),
+                "@type"         : "File",
+                "name"          : relativeTimelinePath.getFileName().toString(),
+                "description"   : "Nextflow execution timeline",
+                "encodingFormat": "text/html"
+            ])
+        }
+
+        if(dagOpts.enabled) {
+            Path relativeDagPath = crateDir.relativize(Paths.get(dagOpts.file.toString()))
+            datasetParts.add([
+                "@id"           : relativeDagPath.toString(),
+                "@type"         : "File",
+                "name"          : relativeDagPath.getFileName().toString(),
+                "description"   : "Nextflow execution DAG",
+                "encodingFormat": "text/html"
+            ])
+        }
+
+        if(traceOpts.enabled) {
+            Path relativeTracePath = crateDir.relativize(Paths.get(traceOpts.file.toString()))
+            datasetParts.add([
+                "@id"           : relativeTracePath.toString(),
+                "@type"         : "File",
+                "name"          : relativeTracePath.getFileName().toString(),
+                "description"   : "Nextflow execution DAG",
+                "encodingFormat": "text/plain"
+            ])
+        }
 
         // -- input files
         Map<Path,String> paramInputFiles = [:]
