@@ -37,10 +37,14 @@ process WC_SAMPLE {
     input:
     tuple val(id), path(fastq_1), path(fastq_2)
 
+    output:
+    tuple val(id), path('counts.txt')
+
     script:
     """
-    wc -l ${fastq_1}
-    wc -l ${fastq_2}
+    touch counts.txt
+    wc -l ${fastq_1} >> counts.txt
+    wc -l ${fastq_2} >> counts.txt
     """
 }
 
@@ -53,11 +57,12 @@ workflow {
     ECHO_EXEC(inputs_ch)
 
     samples_ch = channel.fromPath(params.input).splitCsv(header: true)
-    WC_SAMPLE(samples_ch)
+    counts_ch = WC_SAMPLE(samples_ch)
 
     publish:
     script = ECHO_SCRIPT.out
     exec = ECHO_EXEC.out
+    counts = counts_ch
 }
 
 output {
@@ -73,5 +78,9 @@ output {
         index {
             path 'exec.json'
         }
+    }
+
+    counts {
+        path '.'
     }
 }
