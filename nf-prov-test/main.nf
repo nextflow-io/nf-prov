@@ -1,6 +1,4 @@
 
-nextflow.preview.output = true
-
 params.constant = "foo"
 
 process ECHO_SCRIPT {
