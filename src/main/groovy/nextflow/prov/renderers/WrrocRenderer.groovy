@@ -399,7 +399,7 @@ class WrrocRenderer implements Renderer {
                 // HACK: when the owner script of a processor defines only one process, that must be the definition
                 final meta = ScriptMeta.get(processor.getOwnerScript())
                 final defs = meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef } as List<ProcessDef>
-                final processDef = defs.size() == 1 ? defs.first() : null
+                final processDef = defs.find { it.name == processor.name }
                 if( !processDef )
                     log.warn "Could not identify process definition for `${processor.name}` -- resulting RO-Crate may be invalid (hint: define each process in a separate module script to fix this issue)"
                 acc[processor] = processDef
