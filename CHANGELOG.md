@@ -4,6 +4,14 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.5.0] - 2025-09-04
+
+- Use Nextflow Gradle plugin (#42)
+- Declare config options with ConfigScope (#44)
+- Add workflow outputs to WRROC report (#47)
+- Remove legacy provenance format (#48)
+- Use plugin registry (#50)
+
 ## [1.4.0] - 2025-02-06
 
 - Add Workflow Run RO-Crate format (#39)
