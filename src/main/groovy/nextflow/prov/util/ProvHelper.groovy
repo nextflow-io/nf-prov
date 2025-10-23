@@ -18,6 +18,7 @@ package nextflow.prov.util
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.stream.Collectors
 
 import groovy.transform.CompileStatic
 import nextflow.Session
@@ -83,6 +84,18 @@ class ProvHelper {
     }
 
     /**
+     * Get the input files for a task as a mapping from stage name to source path.
+     *
+     * @param task
+     */
+    static Map<String,Path> getTaskInputs(TaskRun task) {
+        final entries = task.getInputFiles().stream()
+            .map(holder -> Map.entry(holder.getStageName(), holder.getSourcePath()))
+            .toList() as Map.Entry<String,Path>[]
+        return Map.ofEntries(entries)
+    }
+
+    /**
      * Get the list of output files for a task.
      *
      * @param task
@@ -100,12 +113,11 @@ class ProvHelper {
      * @param tasks
      */
     static Map<Path,TaskRun> getTaskLookup(Set<TaskRun> tasks) {
-        final result = [:] as Map<Path,TaskRun>
-
-        for( def task : tasks )
+        final Map<Path,TaskRun> result = [:]
+        for( def task : tasks ) {
             for( def output : getTaskOutputs(task) )
                 result[output] = task
-
+        }
         return result
     }
 
@@ -117,28 +129,10 @@ class ProvHelper {
      * @param taskLookup
      */
     static Set<Path> getWorkflowInputs(Set<TaskRun> tasks, Map<Path,TaskRun> taskLookup) {
-        final result = [] as Set<Path>
-
-        tasks.each { task ->
-            task.getInputFilesMap().each { name, path ->
-                if( taskLookup[path] )
-                    return
-
-                result << path
-            }
-        }
-
-        return result
-    }
-
-    /**
-     * Determine whether a task input file was staged into the work directory.
-     *
-     * @param source
-     * @param session
-     */
-    static boolean isStagedInput(Path source, Session session) {
-        return source.startsWith(getStageDir(session))
+        return tasks.stream()
+            .flatMap(task -> getTaskInputs(task).values().stream())
+            .filter(path -> !taskLookup[path])
+            .collect(Collectors.toSet())
     }
 
     /**
