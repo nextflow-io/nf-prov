@@ -46,6 +46,11 @@ class ProvConfig implements ConfigScope {
     ''')
     final List<String> patterns
 
+    @Description('''
+        User configured metadata for passing metadata upstream of pipeline execution.
+    ''')
+    final Map metadata
+
     /* required by extension point -- do not remove */
     ProvConfig() {}
 
@@ -157,4 +162,6 @@ class ProvWrrocConfig implements ConfigScope {
         overwrite = opts.overwrite as boolean
         license = opts.license
     }
+
+
 }

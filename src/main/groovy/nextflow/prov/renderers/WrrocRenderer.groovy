@@ -99,6 +99,9 @@ class WrrocRenderer implements Renderer {
         if( organization )
             agent["affiliation"] = ["@id": organization["@id"]]
 
+        // parse metadata
+        final configMeta = session.config.navigate('prov.metadata', [:]) as Map
+
         // create manifest
         final datasetParts = []
 
@@ -542,7 +545,8 @@ class WrrocRenderer implements Renderer {
                         *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
                     ],
-                    "license"    : wrrocOpts.license
+                    "license"    : wrrocOpts.license,
+                    "configMetadata"    : configMeta
                 ]),
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
