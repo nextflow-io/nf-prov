@@ -28,6 +28,7 @@ import nextflow.Session
 import nextflow.processor.TaskRun
 import nextflow.prov.renderers.BcoRenderer
 import nextflow.prov.renderers.DagRenderer
+import nextflow.prov.renderers.GexfRenderer
 import nextflow.prov.renderers.WrrocRenderer
 import nextflow.trace.TraceObserverV2
 import nextflow.trace.event.FilePublishEvent
@@ -44,7 +45,7 @@ import nextflow.trace.event.WorkflowOutputEvent
 @CompileStatic
 class ProvObserver implements TraceObserverV2 {
 
-    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'legacy', 'wrroc']
+    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'gexf', 'legacy', 'wrroc']
 
     private Session session
 
@@ -75,6 +76,9 @@ class ProvObserver implements TraceObserverV2 {
 
         if( config.dag )
             result.add(new DagRenderer(config.dag))
+
+        if( config.gexf )
+            result.add(new GexfRenderer(config.gexf))
 
         if( config.wrroc )
             result.add(new WrrocRenderer(config.wrroc))
@@ -152,6 +156,7 @@ class ProvObserver implements TraceObserverV2 {
         return switch( renderer ) {
             case BcoRenderer -> 'BCO';
             case DagRenderer -> 'DAG';
+            case GexfRenderer -> 'GEXF';
             case WrrocRenderer -> 'WRROC';
             default -> null;
         }

@@ -1,5 +1,4 @@
 /*
- * Copyright 2023, Seqera Labs
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,6 +17,7 @@ package nextflow.prov.renderers
 
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 import groovy.transform.CompileStatic
 import groovy.transform.TupleConstructor
@@ -36,8 +36,8 @@ import java.text.SimpleDateFormat
 
 /**
  * Renderer for the GEXF graph format.
- *
- * @author Pierre Lindenbaum
+ * A large of this code was inspired by Ben Sherman's DagRenderer.groovy
+ * @author Pierre Lindenbaum Institut du Thorax PhD. Nantes. France
  */
 @CompileStatic
 class GexfRenderer implements Renderer {
@@ -56,6 +56,7 @@ class GexfRenderer implements Renderer {
   private static final String ATT_PROC_NAME = "4";
   private static final String ATT_FILESIZE = "5";
   private static final String ATT_FILETYPE = "6";
+  private static final String ATT_FILETIMESTAMP = "7";
 
   private Path path
 
@@ -73,10 +74,6 @@ class GexfRenderer implements Renderer {
 
   @Override
   void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
-    // get workflow metadata
-    //final metadata = session.workflowMetadata
-    //this.normalizer = new PathNormalizer(metadata)
-
     try {
       final GexfGraph mainGraph = new GexfGraph();
       for( final task : tasks ) {
@@ -155,7 +152,6 @@ class GexfRenderer implements Renderer {
     }
     abstract String getLabel();
 
-
     @Override
     public int hashCode() {
       return getId().hashCode();
@@ -206,7 +202,6 @@ class GexfRenderer implements Renderer {
       w.writeAttribute("for",ATT_PROC_NAME);
       w.writeAttribute("value",taskRun.processor.name);
 
-
       w.writeEndElement();//attvalues
 
       w.writeEmptyElement("viz","shape", VIZ_NS);
@@ -214,7 +209,6 @@ class GexfRenderer implements Renderer {
 
       w.writeEmptyElement("viz","color", VIZ_NS);
       w.writeAttribute("hex","#A7E0E0");
-
 
       w.writeEndElement();
     }
@@ -224,6 +218,8 @@ class GexfRenderer implements Renderer {
       return getLabel().hashCode();
     }
   }
+
+
   private static class FileGexfNode extends GexfNode  {
     final String noDirName;
     final Path fullPath;
@@ -265,6 +261,17 @@ class GexfRenderer implements Renderer {
       if(!isFile()) return -1L;
       try {
         return Files.size(fullPath);
+      }
+      catch(IOException err) {
+        return -1L;
+      }
+    }
+
+    public long getFileTimestamp() {
+      if(!isFile()) return -1L;
+      try {
+         final FileTime fileTime = Files.readAttributes(fullPath, java.nio.file.attribute.BasicFileAttributes.class).creationTime();
+         return fileTime == null? -1L : fileTime.toMillis();
       }
       catch(IOException err) {
         return -1L;
@@ -320,6 +327,13 @@ class GexfRenderer implements Renderer {
         w.writeEmptyElement("attvalue");
         w.writeAttribute("for",ATT_FILETYPE);
         w.writeAttribute("value",file_type);
+      }
+
+      final long file_timestamp = getFileTimestamp();
+      if(file_timestamp >=0L ) {
+        w.writeEmptyElement("attvalue");
+        w.writeAttribute("for",ATT_FILETIMESTAMP);
+        w.writeAttribute("value",String.valueOf(file_timestamp));
       }
 
       w.writeEndElement();//attvalues
@@ -402,7 +416,7 @@ class GexfRenderer implements Renderer {
         w.writeEndElement();
 
         w.writeStartElement("description");
-        w.writeCharacters("GEXF Renderer for NF-PROV");
+        w.writeCharacters("GEXF Renderer for NF-PROV. Visualize with https://gephi.org/.");
         w.writeEndElement();
 
         w.writeEndElement();//meta
@@ -465,9 +479,9 @@ class GexfRenderer implements Renderer {
         w.writeStartElement("attribute");
         w.writeAttribute("id", ATT_FILESIZE);
         w.writeAttribute("title", "file_size");
-        w.writeAttribute("type", "float");
+        w.writeAttribute("type", "long");
         w.writeStartElement("default");
-        w.writeCharacters("-1.0");
+        w.writeCharacters("-1");
         w.writeEndElement();
         w.writeEndElement();
 
@@ -478,6 +492,15 @@ class GexfRenderer implements Renderer {
         w.writeAttribute("type", "string");
         w.writeStartElement("default");
         w.writeCharacters("");
+        w.writeEndElement();
+        w.writeEndElement();
+
+        w.writeStartElement("attribute");
+        w.writeAttribute("id", ATT_FILETIMESTAMP);
+        w.writeAttribute("title", "timestamp");
+        w.writeAttribute("type", "long");
+        w.writeStartElement("default");
+        w.writeCharacters("-1");
         w.writeEndElement();
         w.writeEndElement();
 
@@ -495,7 +518,6 @@ class GexfRenderer implements Renderer {
         w.writeEndElement();//nodes
 
         w.writeStartElement("edges");
-
         for(GexfEdge e: this.edges) {
           e.write(w);
         }
