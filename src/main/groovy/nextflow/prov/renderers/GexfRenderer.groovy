@@ -50,14 +50,14 @@ class GexfRenderer implements Renderer {
     private static int CURRENT_ID = 1
 
     /** attribute node types */
-    private static final String ATT_CACHED = "0"
-    private static final String ATT_ABORTED = "1"
+    private static final String ATT_TASK_CACHED = "0"
+    private static final String ATT_TASK_ABORTED = "1"
     private static final String ATT_NODE_TYPE = "2"
-    private static final String ATT_FULLPATH = "3"
-    private static final String ATT_PROC_NAME = "4"
-    private static final String ATT_FILESIZE = "5"
-    private static final String ATT_FILETYPE = "6"
-    private static final String ATT_FILETIMESTAMP = "7"
+    private static final String ATT_FILE_PATH = "3"
+    private static final String ATT_TASK_PROCESS = "4"
+    private static final String ATT_FILE_SIZE = "5"
+    private static final String ATT_FILE_TYPE = "6"
+    private static final String ATT_FILE_TIMESTAMP = "7"
 
     private Path path
 
@@ -181,11 +181,11 @@ class GexfRenderer implements Renderer {
             w.writeStartElement("attvalues")
 
             w.writeEmptyElement("attvalue")
-            w.writeAttribute("for", ATT_CACHED)
+            w.writeAttribute("for", ATT_TASK_CACHED)
             w.writeAttribute("value", "${task.cached}")
 
             w.writeEmptyElement("attvalue")
-            w.writeAttribute("for", ATT_ABORTED)
+            w.writeAttribute("for", ATT_TASK_ABORTED)
             w.writeAttribute("value", "${task.aborted}")
 
             w.writeEmptyElement("attvalue")
@@ -193,7 +193,7 @@ class GexfRenderer implements Renderer {
             w.writeAttribute("value", "task")
 
             w.writeEmptyElement("attvalue")
-            w.writeAttribute("for", ATT_PROC_NAME)
+            w.writeAttribute("for", ATT_TASK_PROCESS)
             w.writeAttribute("value", task.processor.name)
 
             w.writeEndElement() // attvalues
@@ -271,6 +271,14 @@ class GexfRenderer implements Renderer {
                 : fileExtension(name)
         }
 
+        /**
+         * Get the extension of a file name.
+         *
+         * For compressed files with a .gz and .bz2 suffix,
+         * use the preceding extension (e.g. *.fastq.gz -> fastq).
+         *
+         * @param s
+         */
         private String fileExtension(String s) {
             if( s.endsWith(".gz") )
                 return fileExtension(s.substring(0, s.length() - 3))
@@ -299,27 +307,27 @@ class GexfRenderer implements Renderer {
             w.writeAttribute("value", "task")
 
             w.writeEmptyElement("attvalue")
-            w.writeAttribute("for", ATT_FULLPATH)
+            w.writeAttribute("for", ATT_FILE_PATH)
             w.writeAttribute("value", path.toString())
 
             final fileSize = getFileSize()
             if( fileSize >= 0L ) {
                 w.writeEmptyElement("attvalue")
-                w.writeAttribute("for", ATT_FILESIZE)
+                w.writeAttribute("for", ATT_FILE_SIZE)
                 w.writeAttribute("value", "${fileSize}")
             }
 
             final fileType = getFileType()
             if( fileType ) {
                 w.writeEmptyElement("attvalue")
-                w.writeAttribute("for", ATT_FILETYPE)
+                w.writeAttribute("for", ATT_FILE_TYPE)
                 w.writeAttribute("value", fileType)
             }
 
             final fileTimestamp = getFileTimestamp()
             if( fileTimestamp >= 0L ) {
                 w.writeEmptyElement("attvalue")
-                w.writeAttribute("for", ATT_FILETIMESTAMP)
+                w.writeAttribute("for", ATT_FILE_TIMESTAMP)
                 w.writeAttribute("value", "${fileTimestamp}")
             }
 
@@ -397,7 +405,7 @@ class GexfRenderer implements Renderer {
             w.writeAttribute("mode", "static")
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_CACHED)
+            w.writeAttribute("id", ATT_TASK_CACHED)
             w.writeAttribute("title", "cached")
             w.writeAttribute("type", "boolean")
             w.writeStartElement("default")
@@ -406,7 +414,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_ABORTED)
+            w.writeAttribute("id", ATT_TASK_ABORTED)
             w.writeAttribute("title", "aborted")
             w.writeAttribute("type", "boolean")
             w.writeStartElement("default")
@@ -427,7 +435,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement() // attribute
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_FULLPATH)
+            w.writeAttribute("id", ATT_FILE_PATH)
             w.writeAttribute("title", "path")
             w.writeAttribute("type", "string")
             w.writeStartElement("default")
@@ -436,8 +444,8 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_PROC_NAME)
-            w.writeAttribute("title", "processus")
+            w.writeAttribute("id", ATT_TASK_PROCESS)
+            w.writeAttribute("title", "processes")
             w.writeAttribute("type", "string")
             w.writeStartElement("default")
             w.writeCharacters("")
@@ -445,7 +453,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_FILESIZE)
+            w.writeAttribute("id", ATT_FILE_SIZE)
             w.writeAttribute("title", "file_size")
             w.writeAttribute("type", "long")
             w.writeStartElement("default")
@@ -454,7 +462,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_FILETYPE)
+            w.writeAttribute("id", ATT_FILE_TYPE)
             w.writeAttribute("title", "file_suffix")
             w.writeAttribute("type", "string")
             w.writeStartElement("default")
@@ -463,7 +471,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_FILETIMESTAMP)
+            w.writeAttribute("id", ATT_FILE_TIMESTAMP)
             w.writeAttribute("title", "timestamp")
             w.writeAttribute("type", "long")
             w.writeStartElement("default")
