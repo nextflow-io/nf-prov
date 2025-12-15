@@ -45,8 +45,6 @@ import nextflow.trace.event.WorkflowOutputEvent
 @CompileStatic
 class ProvObserver implements TraceObserverV2 {
 
-    public static final List<String> VALID_FORMATS = ['bco', 'dag', 'gexf', 'legacy', 'wrroc']
-
     private Session session
 
     private List<Renderer> renderers

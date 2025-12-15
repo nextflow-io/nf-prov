@@ -6,6 +6,7 @@ Nextflow plugin to render provenance reports for pipeline runs. Supports standar
 
 | Version |	Minimum Nextflow version |
 | ------- | ------------------------ |
+| 1.6.x   | 25.10 |
 | 1.5.x   | 25.04 |
 | 1.4.x   | 24.10 |
 | 1.3.x   | 24.10 |
@@ -66,6 +67,10 @@ Configuration scope for the desired output formats. The following formats are av
 - `wrroc`: Render a [Workflow Run RO-Crate](https://www.researchobject.org/workflow-run-crate/). Includes all three profiles (Process, Workflow, and Provenance). See [WRROC.md](docs/WRROC.md) for more information about the additional config options for WRROC.
 
 See the [nf-prov-test](./nf-prov-test) directory for an example pipeline that produces every provenance format.
+
+*New in version 1.7.0*
+
+- `gexf`: Render the workflow run as a [GEXF](https://gexf.net/) document. Supports the `file` and `overwrite` options.
 
 `prov.patterns`
 

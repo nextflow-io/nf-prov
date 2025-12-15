@@ -71,8 +71,8 @@ class ProvFormatsConfig implements ConfigScope {
     ''')
     final ProvDagConfig dag
 
-	@Description('''
-        Configuration scope for the DAG output format.
+    @Description('''
+        Configuration scope for the GEXF output format.
     ''')
     final ProvGexfConfig gexf
 
@@ -136,26 +136,28 @@ class ProvDagConfig implements ConfigScope {
     }
 }
 
+
 @CompileStatic
 class ProvGexfConfig implements ConfigScope {
 
-	@ConfigOption
-	@Description('''
+    @ConfigOption
+    @Description('''
         The file name of the GEXF file.
     ''')
-	String file
+    String file
 
-	@ConfigOption
-	@Description('''
-        When `true` overwrites any existing GEXF diagram with the same name (default: `false`).
+    @ConfigOption
+    @Description('''
+        When `true` overwrites any existing GEXF file with the same name (default: `false`).
     ''')
-	boolean overwrite
+    boolean overwrite
 
-	ProvGexfConfig(Map opts) {
-		file = opts.file
-		overwrite = opts.overwrite as boolean
-	}
+    ProvGexfConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+    }
 }
+
 
 @CompileStatic
 class ProvWrrocConfig implements ConfigScope {
