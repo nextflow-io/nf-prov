@@ -42,10 +42,9 @@ import nextflow.util.PathNormalizer
 class GexfRenderer implements Renderer {
 
     private static final String VERSION = "1.3"
-    private static final String XMLNS = "http://www.gexf.net/1.3"
-    private static final String XMLNS_VIZ = XMLNS + "/viz"
-    private static final String SCHEMA_LOCATION = "http://www.gexf.net/1.3 http://www.gexf.net/1.3/gexf.xsd"
-    private static final String VIZ_NS = "http://gexf.net/1.3/viz"
+    private static final String XMLNS = "http://gexf.net/" + VERSION
+    private static final String SCHEMA_LOCATION = XMLNS + " "+ XMLNS + "/gexf.xsd"
+    private static final String VIZ_NS = XMLNS + "/viz"
 
     private static int CURRENT_ID = 1
 
@@ -57,7 +56,8 @@ class GexfRenderer implements Renderer {
     private static final String ATT_TASK_PROCESS = "4"
     private static final String ATT_FILE_SIZE = "5"
     private static final String ATT_FILE_TYPE = "6"
-    private static final String ATT_FILE_TIMESTAMP = "7"
+    private static final String ATT_FILE_CREATED_TIMESTAMP = "7"
+    private static final String ATT_FILE_MODIFIED_TIMESTAMP = "8"
 
     private Path path
 
@@ -249,10 +249,21 @@ class GexfRenderer implements Renderer {
             }
         }
 
-        long getFileTimestamp() {
+        long getFileCreatedTimestamp() {
             if( !path.isFile() ) return -1L
             try {
                 final fileTime = Files.readAttributes(path, BasicFileAttributes.class).creationTime()
+                return fileTime == null ? -1L : fileTime.toMillis()
+            }
+            catch( IOException e ) {
+                return -1L
+            }
+        }
+
+        long getFileModifiedTimestamp() {
+            if( !path.isFile() ) return -1L
+            try {
+                final fileTime = Files.readAttributes(path, BasicFileAttributes.class).lastModifiedTime()
                 return fileTime == null ? -1L : fileTime.toMillis()
             }
             catch( IOException e ) {
@@ -324,11 +335,18 @@ class GexfRenderer implements Renderer {
                 w.writeAttribute("value", fileType)
             }
 
-            final fileTimestamp = getFileTimestamp()
-            if( fileTimestamp >= 0L ) {
+            final fileCreatedTimestamp = getFileCreatedTimestamp()
+            if( fileCreatedTimestamp >= 0L ) {
                 w.writeEmptyElement("attvalue")
-                w.writeAttribute("for", ATT_FILE_TIMESTAMP)
-                w.writeAttribute("value", "${fileTimestamp}")
+                w.writeAttribute("for", ATT_FILE_CREATED_TIMESTAMP)
+                w.writeAttribute("value", "${fileCreatedTimestamp}")
+            }
+
+            final fileModifiedTimestamp = getFileModifiedTimestamp()
+            if( fileModifiedTimestamp >= 0L ) {
+                w.writeEmptyElement("attvalue")
+                w.writeAttribute("for", ATT_FILE_MODIFIED_TIMESTAMP)
+                w.writeAttribute("value", "${fileModifiedTimestamp}")
             }
 
             w.writeEndElement() // attvalues
@@ -388,7 +406,7 @@ class GexfRenderer implements Renderer {
             w.writeStartElement("meta")
             w.writeAttribute("lastmodifieddate", new SimpleDateFormat("yyyy-MM-dd").format(new Date()))
             w.writeStartElement("creator")
-            w.writeCharacters("GEXF Renderer for nf-prov by Pierre Lindenbaum")
+            w.writeCharacters("GEXF Renderer for nf-prov.")
             w.writeEndElement()
 
             w.writeStartElement("description")
@@ -471,8 +489,17 @@ class GexfRenderer implements Renderer {
             w.writeEndElement()
 
             w.writeStartElement("attribute")
-            w.writeAttribute("id", ATT_FILE_TIMESTAMP)
-            w.writeAttribute("title", "timestamp")
+            w.writeAttribute("id", ATT_FILE_CREATED_TIMESTAMP)
+            w.writeAttribute("title", "created_timestamp")
+            w.writeAttribute("type", "long")
+            w.writeStartElement("default")
+            w.writeCharacters("-1")
+            w.writeEndElement()
+            w.writeEndElement()
+
+            w.writeStartElement("attribute")
+            w.writeAttribute("id", ATT_FILE_MODIFIED_TIMESTAMP)
+            w.writeAttribute("title", "modified_timestamp")
             w.writeAttribute("type", "long")
             w.writeStartElement("default")
             w.writeCharacters("-1")
