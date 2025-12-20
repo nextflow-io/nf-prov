@@ -315,7 +315,7 @@ class GexfRenderer implements Renderer {
 
             w.writeEmptyElement("attvalue")
             w.writeAttribute("for", ATT_NODE_TYPE)
-            w.writeAttribute("value", "task")
+            w.writeAttribute("value", "file")
 
             w.writeEmptyElement("attvalue")
             w.writeAttribute("for", ATT_FILE_PATH)
