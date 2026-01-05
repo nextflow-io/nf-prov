@@ -72,6 +72,11 @@ class ProvFormatsConfig implements ConfigScope {
     final ProvDagConfig dag
 
     @Description('''
+        Configuration scope for the GEXF output format.
+    ''')
+    final ProvGexfConfig gexf
+
+    @Description('''
         Configuration scope for the WRROC output format.
     ''')
     final ProvWrrocConfig wrroc
@@ -79,6 +84,7 @@ class ProvFormatsConfig implements ConfigScope {
     ProvFormatsConfig(Map opts) {
         bco = opts.bco ? new ProvBcoConfig(opts.bco as Map) : null
         dag = opts.dag ? new ProvDagConfig(opts.dag as Map) : null
+        gexf = opts.gexf ? new ProvGexfConfig(opts.gexf as Map) : null
         wrroc = opts.wrroc ? new ProvWrrocConfig(opts.wrroc as Map) : null
 
         if( opts.legacy )
@@ -125,6 +131,28 @@ class ProvDagConfig implements ConfigScope {
     boolean overwrite
 
     ProvDagConfig(Map opts) {
+        file = opts.file
+        overwrite = opts.overwrite as boolean
+    }
+}
+
+
+@CompileStatic
+class ProvGexfConfig implements ConfigScope {
+
+    @ConfigOption
+    @Description('''
+        The file name of the GEXF file.
+    ''')
+    String file
+
+    @ConfigOption
+    @Description('''
+        When `true` overwrites any existing GEXF file with the same name (default: `false`).
+    ''')
+    boolean overwrite
+
+    ProvGexfConfig(Map opts) {
         file = opts.file
         overwrite = opts.overwrite as boolean
     }
