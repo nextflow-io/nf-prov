@@ -4,6 +4,10 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.7.0] - 2026-01-05
+
+- Add GEXF renderer (#57)
+
 ## [1.6.0] - 2025-10-23
 
 - Bump Nextflow 25.10
