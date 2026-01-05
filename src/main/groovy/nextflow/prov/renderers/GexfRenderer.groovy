@@ -42,9 +42,9 @@ import nextflow.util.PathNormalizer
 class GexfRenderer implements Renderer {
 
     private static final String VERSION = "1.3"
-    private static final String XMLNS = "http://gexf.net/" + VERSION
-    private static final String SCHEMA_LOCATION = XMLNS + " "+ XMLNS + "/gexf.xsd"
-    private static final String VIZ_NS = XMLNS + "/viz"
+    private static final String XMLNS = "http://gexf.net/${VERSION}"
+    private static final String SCHEMA_LOCATION = "${XMLNS} ${XMLNS}/gexf.xsd"
+    private static final String VIZ_NS = "${XMLNS}/viz"
 
     private static int CURRENT_ID = 1
 
