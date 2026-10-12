@@ -23,7 +23,9 @@ import java.util.stream.Collectors
 import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.exception.AbortOperationException
+import nextflow.dag.DAG
 import nextflow.file.FileHelper
+import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.script.ScriptType
 import nextflow.script.params.FileOutParam
@@ -172,6 +174,87 @@ class ProvHelper {
     static boolean isTmpInput(Path source, Session session) {
         final tmpDir = session.workDir.resolve('tmp')
         return source.startsWith(tmpDir)
+    }
+
+    /**
+     * Get the step number of each process, defined as the number of
+     * processes on the longest path to the process in the workflow DAG.
+     * Parallel processes have the same step number.
+     *
+     * @param dag
+     */
+    static Map<TaskProcessor,Integer> getProcessSteps(DAG dag) {
+        final Map<DAG.Vertex,List<DAG.Vertex>> preds = [:]
+        for( final edge : dag.edges ) {
+            if( edge.from != null && edge.to != null )
+                preds.computeIfAbsent(edge.to, (k) -> new ArrayList<DAG.Vertex>()).add(edge.from)
+        }
+
+        final Map<DAG.Vertex,Integer> depths = [:]
+        final Map<TaskProcessor,Integer> result = [:]
+        for( final vertex : dag.vertices ) {
+            if( vertex.process != null )
+                result[vertex.process] = getDepth(vertex, preds, depths)
+        }
+        return result
+    }
+
+    private static int getDepth(DAG.Vertex vertex, Map<DAG.Vertex,List<DAG.Vertex>> preds, Map<DAG.Vertex,Integer> depths) {
+        if( depths.containsKey(vertex) )
+            return depths[vertex]
+        // placeholder to break cycles (e.g. process recursion)
+        depths[vertex] = 0
+        int depth = 0
+        for( final pred : preds.getOrDefault(vertex, []) )
+            depth = Math.max(depth, getDepth(pred, preds, depths))
+        if( vertex.process != null )
+            depth += 1
+        depths[vertex] = depth
+        return depth
+    }
+
+    /**
+     * Get the params whose values are paths, as a mapping
+     * from path to param names.
+     *
+     * @param params
+     */
+    static Map<Path,List<String>> getParamPaths(Map<String,?> params) {
+        final Map<Path,List<String>> result = [:]
+        for( final entry : params.entrySet() ) {
+            final path = asParamPath(entry.value)
+            if( path != null )
+                result.computeIfAbsent(path, (k) -> new ArrayList<String>()).add(entry.key)
+        }
+        return result
+    }
+
+    private static Path asParamPath(Object value) {
+        if( value instanceof Path )
+            return value.complete().normalize()
+        // skip blank values, which would resolve to the launch directory
+        if( value !instanceof CharSequence || !value.toString().trim() )
+            return null
+        try {
+            return (value.toString() as Path).complete().normalize()
+        }
+        catch( Exception e ) {
+            return null
+        }
+    }
+
+    /**
+     * Find the params whose path is the given path or a
+     * parent directory of it.
+     *
+     * @param source
+     * @param paramPaths
+     */
+    static List<String> findParams(Path source, Map<Path,List<String>> paramPaths) {
+        final List<String> result = []
+        for( def p = source.normalize(); p != null; p = p.getParent() )
+            result.addAll(paramPaths.getOrDefault(p, []))
+        return result
     }
 
 }

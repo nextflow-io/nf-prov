@@ -16,6 +16,7 @@
 
 package nextflow.prov.renderers
 
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
@@ -25,7 +26,6 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.SysEnv
 import nextflow.config.Manifest
-import nextflow.dag.DAG
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvBcoConfig
@@ -67,7 +67,7 @@ class BcoRenderer implements Renderer {
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
 
         // sort tasks by step number, then by name, so that the order is independent of execution
-        final processSteps = getProcessSteps(session.dag)
+        final processSteps = ProvHelper.getProcessSteps(session.dag)
         final sortedTasks = tasks.toSorted { TaskRun a, TaskRun b ->
             processSteps[a.processor] <=> processSteps[b.processor] ?: a.name <=> b.name ?: a.hash.toString() <=> b.hash.toString()
         }
@@ -212,6 +212,7 @@ class BcoRenderer implements Renderer {
         bco.etag = etag
 
         // render BCO manifest to JSON file
+        Files.createDirectories(path.parent)
         path.text = JsonOutput.prettyPrint(generator.toJson(bco))
     }
 
@@ -221,43 +222,6 @@ class BcoRenderer implements Renderer {
         if( value instanceof Collection )
             return (value as Collection).collect { v -> sortKeys(v) }
         return value
-    }
-
-    /**
-     * Get the step number of each process, defined as the number of
-     * processes on the longest path to the process in the workflow DAG.
-     * Parallel processes have the same step number.
-     *
-     * @param dag
-     */
-    private static Map<TaskProcessor,Integer> getProcessSteps(DAG dag) {
-        final Map<DAG.Vertex,List<DAG.Vertex>> preds = [:]
-        for( final edge : dag.edges ) {
-            if( edge.from != null && edge.to != null )
-                preds.computeIfAbsent(edge.to, (k) -> new ArrayList<DAG.Vertex>()).add(edge.from)
-        }
-
-        final Map<DAG.Vertex,Integer> depths = [:]
-        final Map<TaskProcessor,Integer> result = [:]
-        for( final vertex : dag.vertices ) {
-            if( vertex.process != null )
-                result[vertex.process] = getDepth(vertex, preds, depths)
-        }
-        return result
-    }
-
-    private static int getDepth(DAG.Vertex vertex, Map<DAG.Vertex,List<DAG.Vertex>> preds, Map<DAG.Vertex,Integer> depths) {
-        if( depths.containsKey(vertex) )
-            return depths[vertex]
-        // placeholder to break cycles (e.g. process recursion)
-        depths[vertex] = 0
-        int depth = 0
-        for( final pred : preds.getOrDefault(vertex, []) )
-            depth = Math.max(depth, getDepth(pred, preds, depths))
-        if( vertex.process != null )
-            depth += 1
-        depths[vertex] = depth
-        return depth
     }
 
     /**
@@ -273,38 +237,18 @@ class BcoRenderer implements Renderer {
      * @param processSteps
      */
     private static Map<String,String> getParamSteps(Map<String,Object> params, Set<TaskRun> tasks, Map<TaskProcessor,Integer> processSteps) {
-        final Map<Path,List<String>> paramPaths = [:]
-        for( final entry : params ) {
-            final path = asParamPath(entry.value)
-            if( path != null )
-                paramPaths.computeIfAbsent(path, (k) -> new ArrayList<String>()).add(entry.key)
-        }
-
+        final paramPaths = ProvHelper.getParamPaths(params)
         final Map<String,Set<Integer>> result = [:]
         for( final task : tasks ) {
             final step = processSteps[task.processor]
             if( step == null )
                 continue
             for( final source : ProvHelper.getTaskInputs(task).values() ) {
-                for( def p = source.normalize(); p != null; p = p.getParent() ) {
-                    for( final name : paramPaths.getOrDefault(p, []) )
-                        result.computeIfAbsent(name, (k) -> new TreeSet<Integer>()).add(step)
-                }
+                for( final name : ProvHelper.findParams(source, paramPaths) )
+                    result.computeIfAbsent(name, (k) -> new TreeSet<Integer>()).add(step)
             }
         }
         return result.collectEntries { name, steps -> [name, steps.join(',')] } as Map<String,String>
-    }
-
-    private static Path asParamPath(Object value) {
-        // skip blank values, which would resolve to the launch directory
-        if( value !instanceof CharSequence || !value.toString().trim() )
-            return null
-        try {
-            return (value.toString() as Path).complete().normalize()
-        }
-        catch( Exception e ) {
-            return null
-        }
     }
 
     /**

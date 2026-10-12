@@ -26,6 +26,7 @@ import groovy.json.JsonSlurper
 import nextflow.NextflowMeta
 import nextflow.Session
 import nextflow.config.Manifest
+import nextflow.dag.DAG
 import nextflow.file.FileHolder
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
@@ -160,6 +161,7 @@ class WrrocRendererTest extends Specification {
             getConfig() >> [prov: [formats: [wrroc: wrrocOpts]]]
             getParams() >> new ScriptBinding.ParamsMap((opts.params ?: [:]) as Map<String,Object>)
             getWorkflowMetadata() >> metadata
+            getDag() >> (opts.dag ?: new DAG())
             getWorkDir() >> workDir
             getOutputDir() >> crateDir
             getUniqueId() >> UUID.fromString('00000000-0000-0000-0000-000000000000')
@@ -494,6 +496,55 @@ class WrrocRendererTest extends Specification {
         graph['#param/missing/value']['@type'] == 'PropertyValue'
         graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': id])
         graph["#task/${t.hash}"].object == ['@id': id]
+    }
+
+    def 'should link directories specified by params to the input files they contain' () {
+        given:
+        final refs = Files.createDirectories(root.resolve('refs'))
+        final genome = refs.resolve('genome.fa')
+        genome.text = 'ACGT'
+        final index = Files.createDirectories(refs.resolve('index')).resolve('genome.idx')
+        index.text = 'idx'
+        final other = root.resolve('other.txt')
+        other.text = 'other'
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [genome, index, other])
+
+        when:
+        final graph = render([t] as Set, params: [refs: refs])
+
+        then:
+        final id = refs.toUri().toString()
+        graph[id]['@type'] == 'Dataset'
+        graph[id].hasPart == [['@id': genome.toUri().toString()], ['@id': index.toUri().toString()]]
+        graph[genome.toUri().toString()]['@type'] == 'File'
+    }
+
+    def 'should set step position to the process depth in the workflow DAG' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO', 'BAR', 'BAZ'])
+        final (foo, bar, baz) = ['FOO', 'BAR', 'BAZ'].collect { name -> processor(name, owner) }
+        final tasks = [task(foo, 'FOO (1)'), task(bar, 'BAR (1)'), task(baz, 'BAZ (1)')] as Set
+        final vertices = [foo, bar, baz].collect { p -> Mock(DAG.Vertex) { getProcess() >> p } }
+        final edges = [[0, 1], [0, 2]].collect { from, to ->
+            Mock(DAG.Edge) {
+                getFrom() >> vertices[from]
+                getTo() >> vertices[to]
+            }
+        }
+        final dag = Mock(DAG) {
+            getVertices() >> vertices
+            getEdges() >> edges
+        }
+
+        when:
+        // FOO -> BAR, FOO -> BAZ
+        final graph = render(tasks, dag: dag)
+
+        then:
+        graph['#process-step/FOO'].position == 1
+        graph['#process-step/BAR'].position == 2
+        graph['#process-step/BAZ'].position == 2
     }
 
     def 'should link input file to every param that specifies it' () {
