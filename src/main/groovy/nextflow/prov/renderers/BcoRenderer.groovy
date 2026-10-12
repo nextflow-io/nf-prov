@@ -25,6 +25,8 @@ import groovy.transform.CompileStatic
 import nextflow.Session
 import nextflow.SysEnv
 import nextflow.config.Manifest
+import nextflow.dag.DAG
+import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvBcoConfig
 import nextflow.prov.Renderer
@@ -63,6 +65,12 @@ class BcoRenderer implements Renderer {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
+
+        // sort tasks by step number, then by name, so that the order is independent of execution
+        final processSteps = getProcessSteps(session.dag)
+        final sortedTasks = tasks.toSorted { TaskRun a, TaskRun b ->
+            processSteps[a.processor] <=> processSteps[b.processor] ?: a.name <=> b.name ?: a.hash.toString() <=> b.hash.toString()
+        }
 
         // get workflow metadata
         final metadata = session.workflowMetadata
@@ -111,8 +119,8 @@ class BcoRenderer implements Renderer {
                 "keywords": keywords,
                 "xref": xref,
                 "platform": ["Nextflow"],
-                "pipeline_steps": tasks.sort( (task) -> task.id ).collect { task -> [
-                    "step_number": task.id,
+                "pipeline_steps": sortedTasks.collect { task -> [
+                    "step_number": processSteps[task.processor] ?: 0,
                     "name": task.hash.toString(),
                     "description": task.name,
                     "input_list": ProvHelper.getTaskInputs(task).collect { name, source -> [
@@ -151,7 +159,7 @@ class BcoRenderer implements Renderer {
             "parametric_domain": params.toConfigObject().flatten().collect( (k, v) -> [
                 "param": k,
                 "value": normalizePath(v.toString()),
-                "step": "0"
+                "step": ""
             ] ),
             "io_domain": [
                 "input_subdomain": workflowInputs.collect { source -> normalizeUri(source) }.sort().collect { uri -> [
@@ -212,6 +220,43 @@ class BcoRenderer implements Renderer {
         if( value instanceof Collection )
             return (value as Collection).collect { v -> sortKeys(v) }
         return value
+    }
+
+    /**
+     * Get the step number of each process, defined as the number of
+     * processes on the longest path to the process in the workflow DAG.
+     * Parallel processes have the same step number.
+     *
+     * @param dag
+     */
+    private static Map<TaskProcessor,Integer> getProcessSteps(DAG dag) {
+        final Map<DAG.Vertex,List<DAG.Vertex>> preds = [:]
+        for( final edge : dag.edges ) {
+            if( edge.from != null && edge.to != null )
+                preds.computeIfAbsent(edge.to, (k) -> new ArrayList<DAG.Vertex>()).add(edge.from)
+        }
+
+        final Map<DAG.Vertex,Integer> depths = [:]
+        final Map<TaskProcessor,Integer> result = [:]
+        for( final vertex : dag.vertices ) {
+            if( vertex.process != null )
+                result[vertex.process] = getDepth(vertex, preds, depths)
+        }
+        return result
+    }
+
+    private static int getDepth(DAG.Vertex vertex, Map<DAG.Vertex,List<DAG.Vertex>> preds, Map<DAG.Vertex,Integer> depths) {
+        if( depths.containsKey(vertex) )
+            return depths[vertex]
+        // placeholder to break cycles (e.g. process recursion)
+        depths[vertex] = 0
+        int depth = 0
+        for( final pred : preds.getOrDefault(vertex, []) )
+            depth = Math.max(depth, getDepth(pred, preds, depths))
+        if( vertex.process != null )
+            depth += 1
+        depths[vertex] = depth
+        return depth
     }
 
     /**
