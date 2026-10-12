@@ -168,11 +168,11 @@ class BcoRenderer implements Renderer {
                         "uri": uri
                     ]
                 ] },
-                "output_subdomain": publishedFiles.entrySet().sort { e -> e.value.toUriString() }.collect { e -> [
-                    "mediatype": ProvHelper.getEncodingFormat(e.key) ?: "",
+                "output_subdomain": publishedFiles.entrySet().sort { e -> e.key.toUriString() }.collect { e -> [
+                    "mediatype": ProvHelper.getEncodingFormat(e.value) ?: "",
                     "uri": [
-                        "filename": normalizePath(e.key),
-                        "uri": normalizePath(e.value)
+                        "filename": normalizePath(e.value),
+                        "uri": normalizePath(e.key)
                     ]
                 ] }
             ],

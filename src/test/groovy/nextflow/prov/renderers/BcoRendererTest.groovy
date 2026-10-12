@@ -150,7 +150,7 @@ class BcoRendererTest extends Specification {
             dag: dag([[foo, bar]]),
             manifest: [name: 'test', version: '1.0', license: 'MIT', contributors: [[name: 'Alice', contribution: ['author', 'maintainer']]]],
             params: [input: input.toString(), opts: [n: 1]],
-            publishedFiles: [(barOut): published])
+            publishedFiles: [(published): barOut])
 
         then:
         bco.object_id.startsWith('urn:uuid:')
@@ -304,7 +304,7 @@ class BcoRendererTest extends Specification {
     def 'should render published files independent of publish order' () {
         given:
         final files = ['a.txt', 'b.txt', 'c.txt'].collect { name -> workDir.resolve(name) }
-        final published = files.collectEntries { source -> [source, root.resolve("results/${source.name}")] }
+        final published = files.collectEntries { source -> [root.resolve("results/${source.name}"), source] }
         final reversed = published.entrySet().toList().reverse().collectEntries { e -> [e.key, e.value] }
 
         when:
@@ -315,6 +315,18 @@ class BcoRendererTest extends Specification {
         bco1.io_domain.output_subdomain*.uri*.filename == ['work/a.txt', 'work/b.txt', 'work/c.txt']
         bco1.io_domain == bco2.io_domain
         bco1.etag == bco2.etag
+    }
+
+    def 'should render multiple index files' () {
+        given:
+        final a = root.resolve('results/a.json')
+        final b = root.resolve('results/b.json')
+
+        when:
+        final bco = render([] as Set, publishedFiles: [(a): null, (b): null])
+
+        then:
+        bco.io_domain.output_subdomain*.uri*.uri == ["file://${a}", "file://${b}"]*.toString()
     }
 
     def 'should not overwrite existing file by default' () {

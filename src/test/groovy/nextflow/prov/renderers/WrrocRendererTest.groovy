@@ -231,7 +231,7 @@ class WrrocRendererTest extends Specification {
             wrroc: [agent: [name: 'Alice', orcid: 'https://orcid.org/0000-0000-0000-0000']],
             params: [input: input.toString()],
             workflowOutputs: [bar: published],
-            publishedFiles: [(barOut): published])
+            publishedFiles: [(published): barOut])
 
         then:
         graph['ro-crate-metadata.json'].about == ['@id': './']
@@ -582,7 +582,7 @@ class WrrocRendererTest extends Specification {
         final outside = Files.createFile(root.resolve('foo.txt'))
 
         when:
-        final graph = render([t] as Set, workflowOutputs: [foo: outside], publishedFiles: [(t.workDir.resolve('foo.txt')): outside])
+        final graph = render([t] as Set, workflowOutputs: [foo: outside], publishedFiles: [(outside): t.workDir.resolve('foo.txt')])
 
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])
@@ -590,6 +590,22 @@ class WrrocRendererTest extends Specification {
         graph['#00000000-0000-0000-0000-000000000000'].result == ['@id': '#output/foo/value']
         !graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': '#output/foo/value'])
         !graph.values().any { entity -> entity.name == 'publish' && entity.result == ['@id': '../foo.txt'] }
+    }
+
+    def 'should publish a task output to multiple targets' () {
+        given:
+        final t = task(processor('FOO', script(projectDir.resolve('main.nf'), ['FOO'])), 'FOO (1)', outputs: ['foo.txt'])
+        final source = t.workDir.resolve('foo.txt')
+        final a = Files.createFile(crateDir.resolve('a.txt'))
+        final b = Files.createFile(crateDir.resolve('b.txt'))
+
+        when:
+        final graph = render([t] as Set, publishedFiles: [(a): source, (b): source])
+
+        then:
+        graph["#publish/${t.hash}/foo.txt"].result as Set == [['@id': 'a.txt'], ['@id': 'b.txt']] as Set
+        graph['a.txt']
+        graph['b.txt']
     }
 
     def 'should render agent, organization and contact points' () {

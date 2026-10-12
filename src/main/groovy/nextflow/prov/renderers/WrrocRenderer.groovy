@@ -319,14 +319,14 @@ class WrrocRenderer implements Renderer {
 
         // -- output files
         final outputFiles = publishedFiles
-            .findAll { source, target ->
+            .findAll { target, source ->
                 // warn about any output files outside of the crate directory
                 final result = target.startsWith(crateDir)
                 if( !result )
                     log.warn "Excluding workflow output ${target} because it is outside of the RO-Crate directory -- make sure that the workflow output directory and RO-Crate directory are the same"
                 return result
             }
-            .collect { source, target ->
+            .collect { target, source ->
                 withoutNulls([
                     "@id"           : getCrateFileId(target, crateDir),
                     "@type"         : getType(target),
@@ -528,10 +528,11 @@ class WrrocRenderer implements Renderer {
         }
 
         final publishCreateActions = publishedFiles
-            .findAll { source, target -> source in taskLookup && target.startsWith(crateDir) }
-            .collect { source, target ->
-                final task = taskLookup[source]
-                final sourceName = getTaskOutputName(task, source)
+            .findAll { target, source -> source in taskLookup && target.startsWith(crateDir) }
+            .groupBy { target, source -> source }
+            .collect { source, targets ->
+                final task = taskLookup[source as Path]
+                final sourceName = getTaskOutputName(task, source as Path)
 
                 return withoutNulls([
                     "@id"         : "#publish/${task.hash}/${sourceName}",
@@ -540,7 +541,7 @@ class WrrocRenderer implements Renderer {
                     "agent"       : agent ? ["@id": agent["@id"]] : null,
                     "instrument"  : ["@id": softwareApplicationId],
                     "object"      : ["@id": getTaskOutputId(task, sourceName)],
-                    "result"      : ["@id": getCrateFileId(target, crateDir)],
+                    "result"      : targets.keySet().collect { target -> ["@id": getCrateFileId(target as Path, crateDir)] },
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ])
             }
