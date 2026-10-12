@@ -46,6 +46,16 @@ class ProvHelperTest extends Specification {
         ScriptType.GROOVY    | Integer.MAX_VALUE | new Exception('boom') | false
     }
 
+    def 'should get output files of a typed task' () {
+        given:
+        def task = Spy(TaskRun)
+        task.hasTypedInputsOutputs() >> true
+        task.outputFiles = [Path.of('/work/ab/a.txt'), Path.of('/work/ab/outdir')] as Set
+
+        expect:
+        ProvHelper.getTaskOutputs(task) == [Path.of('/work/ab/a.txt'), Path.of('/work/ab/outdir')]
+    }
+
     def 'should find task output containing a path' () {
         given:
         def task = Mock(TaskRun)

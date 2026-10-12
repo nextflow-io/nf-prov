@@ -115,6 +115,8 @@ class ProvHelper {
      * @param task
      */
     static List<Path> getTaskOutputs(TaskRun task) {
+        if( task.hasTypedInputsOutputs() )
+            return task.outputFiles.toList()
         return task
             .getOutputsByType(FileOutParam)
             .values()
