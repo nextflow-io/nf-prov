@@ -104,7 +104,7 @@ class BcoRenderer implements Renderer {
                 "created": dateCreated,
                 "modified": dateCreated,
                 "contributors": contributors,
-                "license": manifest.license
+                "license": manifest.license ?: ""
             ],
             "usability_domain": usability,
             "extension_domain": [],
@@ -125,7 +125,13 @@ class BcoRenderer implements Renderer {
                 ] },
             ],
             "execution_domain": [
-                "script": [ normalizePath(metadata.scriptFile) ],
+                "script": [
+                    [
+                        "uri": [
+                            "uri": normalizePath(metadata.scriptFile)
+                        ]
+                    ]
+                ],
                 "script_driver": "nextflow",
                 "software_prerequisites": [
                     [

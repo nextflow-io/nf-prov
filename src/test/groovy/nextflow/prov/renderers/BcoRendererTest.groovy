@@ -140,7 +140,7 @@ class BcoRendererTest extends Specification {
         bco.description_domain.pipeline_steps[1].input_list == [[uri: "file://${fooOut}"]]
 
         and:
-        bco.execution_domain.script == ["file://${projectDir}/main.nf"]
+        bco.execution_domain.script == [[uri: [uri: "file://${projectDir}/main.nf"]]]
         bco.execution_domain.software_prerequisites[0].version == NextflowMeta.instance.version.toString()
         bco.parametric_domain as Set == [
             [param: 'input', value: "file://${input}", step: '0'],
@@ -167,6 +167,7 @@ class BcoRendererTest extends Specification {
         final bco = render([] as Set, bco: bcoOpts)
 
         then:
+        bco.provenance_domain.license == ''
         bco.provenance_domain.review == [[status: 'approved']]
         bco.provenance_domain.derived_from == 'x'
         bco.provenance_domain.obsolete_after == '2030-01-01'
