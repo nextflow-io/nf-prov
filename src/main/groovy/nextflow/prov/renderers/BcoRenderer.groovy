@@ -30,7 +30,6 @@ import nextflow.prov.ProvBcoConfig
 import nextflow.prov.Renderer
 import nextflow.prov.util.ProvHelper
 import nextflow.script.WorkflowMetadata
-import nextflow.util.CacheHelper
 import nextflow.util.PathNormalizer
 
 import static nextflow.config.Manifest.ContributionType
@@ -155,16 +154,16 @@ class BcoRenderer implements Renderer {
                 "step": "0"
             ] ),
             "io_domain": [
-                "input_subdomain": workflowInputs.collect { source -> [
+                "input_subdomain": workflowInputs.collect { source -> normalizeUri(source) }.sort().collect { uri -> [
                     "uri": [
-                        "uri": normalizeUri(source)
+                        "uri": uri
                     ]
                 ] },
-                "output_subdomain": publishedFiles.collect { source, target -> [
-                    "mediatype": ProvHelper.getEncodingFormat(source) ?: "",
+                "output_subdomain": publishedFiles.entrySet().sort { e -> e.value.toUriString() }.collect { e -> [
+                    "mediatype": ProvHelper.getEncodingFormat(e.key) ?: "",
                     "uri": [
-                        "filename": normalizePath(source),
-                        "uri": normalizePath(target)
+                        "filename": normalizePath(e.key),
+                        "uri": normalizePath(e.value)
                     ]
                 ] }
             ],
@@ -192,19 +191,27 @@ class BcoRenderer implements Renderer {
             ]
         }
 
-        // compute etag
-        // TODO: make a more canonical hash
-        final etag = CacheHelper.hasher(bco, CacheHelper.HashMode.SHA256).hash()
+        // omit null fields since the BCO schema does not allow them
+        final generator = new JsonGenerator.Options().excludeNulls().build()
 
-        // append non-cacheable fields
+        // compute etag as SHA-256 of the canonical JSON (sorted keys, no whitespace),
+        // excluding object_id, spec_version, and etag
+        final etag = generator.toJson(sortKeys(bco)).digest('SHA-256')
+
         bco.object_id = "urn:uuid:${UUID.randomUUID()}"
         bco.spec_version = "https://w3id.org/ieee/ieee-2791-schema/2791object.json"
-        bco.etag = etag.toString()
+        bco.etag = etag
 
         // render BCO manifest to JSON file
-        // omit null fields since the BCO schema does not allow them
-        final json = new JsonGenerator.Options().excludeNulls().build().toJson(bco)
-        path.text = JsonOutput.prettyPrint(json)
+        path.text = JsonOutput.prettyPrint(generator.toJson(bco))
+    }
+
+    private static Object sortKeys(Object value) {
+        if( value instanceof Map )
+            return new TreeMap((value as Map).collectEntries { k, v -> [k.toString(), sortKeys(v)] })
+        if( value instanceof Collection )
+            return (value as Collection).collect { v -> sortKeys(v) }
+        return value
     }
 
     /**
