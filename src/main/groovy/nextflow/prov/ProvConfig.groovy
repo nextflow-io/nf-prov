@@ -180,9 +180,77 @@ class ProvWrrocConfig implements ConfigScope {
     ''')
     final String license
 
+    @Description('''
+        The agent (person) running the workflow.
+    ''')
+    final ProvWrrocContactConfig agent
+
+    @Description('''
+        The organization of the agent running the workflow.
+    ''')
+    final ProvWrrocContactConfig organization
+
+    @ConfigOption
+    @Description('''
+        The publisher of the Workflow Run RO-Crate. Must be the ORCID of the agent or the ROR of the organization.
+    ''')
+    final String publisher
+
     ProvWrrocConfig(Map opts) {
         file = opts.file
         overwrite = opts.overwrite as boolean
         license = opts.license
+        agent = opts.agent ? new ProvWrrocContactConfig(opts.agent as Map) : null
+        organization = opts.organization ? new ProvWrrocContactConfig(opts.organization as Map) : null
+        publisher = opts.publisher
+    }
+}
+
+@CompileStatic
+class ProvWrrocContactConfig implements ConfigScope {
+
+    @ConfigOption
+    @Description('''
+        The name of the person or organization.
+    ''')
+    final String name
+
+    @ConfigOption
+    @Description('''
+        The ORCID of the person.
+    ''')
+    final String orcid
+
+    @ConfigOption
+    @Description('''
+        The ROR of the organization.
+    ''')
+    final String ror
+
+    @ConfigOption
+    @Description('''
+        The contact email address.
+    ''')
+    final String email
+
+    @ConfigOption
+    @Description('''
+        The contact phone number.
+    ''')
+    final String phone
+
+    @ConfigOption
+    @Description('''
+        The contact type (e.g. `Researcher`).
+    ''')
+    final String contactType
+
+    ProvWrrocContactConfig(Map opts) {
+        name = opts.name
+        orcid = opts.orcid
+        ror = opts.ror
+        email = opts.email
+        phone = opts.phone
+        contactType = opts.contactType
     }
 }
