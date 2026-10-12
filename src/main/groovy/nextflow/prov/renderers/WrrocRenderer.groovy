@@ -665,6 +665,7 @@ class WrrocRenderer implements Renderer {
                     "@type"     : "CreateAction",
                     "agent"     : agent ? ["@id": agent["@id"]] : null,
                     "name"      : "Nextflow workflow run ${session.uniqueId}",
+                    "description": metadata.commandLine ? "Command-line: ${metadata.commandLine}" : null,
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted,
                     "instrument": ["@id": mainScriptId],
