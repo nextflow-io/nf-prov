@@ -369,12 +369,17 @@ class GexfRenderer implements Renderer {
 
     private static class GexfGraph {
 
-        private final Set<GexfNode> nodes = new HashSet<>()
+        private final Map<GexfNode,GexfNode> nodes = new HashMap<>()
         private final Set<GexfEdge> edges = new HashSet<>()
 
+        /**
+         * Add a node to the graph, or return the existing node
+         * if an equal node was already added.
+         *
+         * @param n
+         */
         GexfNode addNode(GexfNode n) {
-            nodes.add(n)
-            return n
+            return nodes.putIfAbsent(n, n) ?: n
         }
 
         GexfEdge addEdge(GexfNode source, GexfNode target) {
@@ -384,7 +389,7 @@ class GexfRenderer implements Renderer {
         }
 
         void write(Path xmlFile) {
-            setVizSizes(nodes)
+            setVizSizes(nodes.keySet())
 
             Files.newOutputStream(xmlFile).withCloseable { outputStream ->
                 write0(outputStream)
@@ -514,7 +519,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement() // attributes
 
             w.writeStartElement("nodes")
-            for( final n : nodes ) {
+            for( final n : nodes.keySet() ) {
                 n.write(w)
             }
             w.writeEndElement() // nodes
