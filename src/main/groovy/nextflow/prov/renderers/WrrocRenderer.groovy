@@ -135,6 +135,9 @@ class WrrocRenderer implements Renderer {
             break
         }
 
+        // -- workflow diagram
+        final diagramId = getDiagram(manifest.diagram, crateDir, datasetParts)
+
         // -- main script
         final mainScriptId = metadata.scriptFile.name
         final softwareApplicationId = "https://github.com/nextflow-io/nextflow/releases/tag/v${nextflowVersion}"
@@ -657,6 +660,7 @@ class WrrocRenderer implements Renderer {
                     "url"                : metadata.repository ? normalizePath(metadata.scriptFile) : null,
                     "encodingFormat"     : "application/nextflow",
                     "runtimePlatform"    : "Nextflow " + nextflowVersion,
+                    "image"              : diagramId ? ["@id": diagramId] : null,
                     "hasPart"            : asReferences(moduleSoftwareApplications),
                     "input"              : asReferences(inputParameters),
                     "output"             : asReferences(outputParameters),
@@ -777,6 +781,37 @@ class WrrocRenderer implements Renderer {
         }
 
         return result
+    }
+
+    /**
+     * Add the workflow diagram to the crate, copying it from the
+     * project directory unless it is a URL.
+     *
+     * @param diagram relative path or URL from the manifest
+     * @param crateDir
+     * @param datasetParts
+     */
+    private String getDiagram(String diagram, Path crateDir, List datasetParts) {
+        if( !diagram )
+            return null
+        final remote = diagram.contains('://')
+        final source = remote ? null : projectDir.resolve(diagram)
+        if( !remote && !Files.exists(source) ) {
+            log.warn "Workflow diagram `${diagram}` does not exist in the project directory -- it will not be included in the Workflow Run RO-Crate"
+            return null
+        }
+        if( !remote ) {
+            final target = crateDir.resolve(diagram)
+            Files.createDirectories(target.parent)
+            source.copyTo(target)
+        }
+        datasetParts.add([
+            "@id"        : diagram,
+            "@type"      : ["File", "ImageObject"],
+            "name"       : diagram.tokenize('/').last(),
+            "description": "The diagram of the workflow."
+        ])
+        return diagram
     }
 
     /**
