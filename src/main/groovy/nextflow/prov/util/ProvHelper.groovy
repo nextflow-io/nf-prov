@@ -102,10 +102,9 @@ class ProvHelper {
      * @param task
      */
     static Map<String,Path> getTaskInputs(TaskRun task) {
-        final entries = task.getInputFiles().stream()
-            .map(holder -> Map.entry(holder.getStageName(), holder.getSourcePath()))
-            .toList() as Map.Entry<String,Path>[]
-        return Map.ofEntries(entries)
+        return task.getInputFiles().collectEntries { holder ->
+            [holder.getStageName(), holder.getSourcePath()]
+        } as Map<String,Path>
     }
 
     /**

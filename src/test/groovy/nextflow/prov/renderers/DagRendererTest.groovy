@@ -92,10 +92,10 @@ class DagRendererTest extends Specification {
 
     def 'should render task graph' () {
         given:
-        final input = root.resolve('input.txt')
-        final t1 = task('WF:FOO', 'WF:FOO (1)', inputs: [input], outputs: ['foo.txt'])
-        final fooOut = workDir.resolve("${t1.hash}/foo.txt")
-        final t2 = task('BAR', 'BAR (1)', inputs: [fooOut], outputs: ['bar.txt'])
+        final input = root.resolve('reads (1).fq')
+        final t1 = task('WF:FOO', 'WF:FOO (sample "1")', inputs: [input], outputs: ['foo|1.txt'])
+        final fooOut = workDir.resolve("${t1.hash}/foo|1.txt")
+        final t2 = task('BAR', 'BAR (1)', inputs: [fooOut], outputs: ['bar[1].txt'])
 
         when:
         final mmd = render([t1, t2] as Set)
@@ -104,35 +104,43 @@ class DagRendererTest extends Specification {
         mmd == '''\
             flowchart TD
                 subgraph " "
-                in0["input.txt"]
+                in0["reads (1).fq"]
                 end
-                subgraph WF
-                t0(["FOO (1)"])
+                subgraph s0 ["WF"]
+                t0(["FOO (sample #quot;1#quot;)"])
                 end
                 t1(["BAR (1)"])
                 in0 --> t0
-                t0 -->|foo.txt| t1
+                t0 -->|"foo|1.txt"| t1
                 t1 --> out0
                 subgraph " "
-                out0[bar.txt]
+                out0["bar[1].txt"]
                 end'''.stripIndent()
     }
 
     def 'should render nested subworkflows' () {
         given:
-        final t1 = task('OUTER:INNER:FOO', 'OUTER:INNER:FOO (1)')
-        final t2 = task('OUTER:BAR', 'OUTER:BAR')
+        final t1 = task('OUTER:A:STATS:FOO', 'OUTER:A:STATS:FOO (1)')
+        final t2 = task('OUTER:B:STATS:FOO', 'OUTER:B:STATS:FOO (1)')
+        final t3 = task('OUTER:BAR', 'OUTER:BAR')
 
         when:
-        final mmd = render([t1, t2] as Set)
+        final mmd = render([t1, t2, t3] as Set)
 
         then:
         mmd.contains('''\
-                subgraph OUTER
-                subgraph INNER
+                subgraph s0 ["OUTER"]
+                subgraph s1 ["A"]
+                subgraph s2 ["STATS"]
                 t0(["FOO (1)"])
                 end
-                t1(["BAR"])
+                end
+                subgraph s3 ["B"]
+                subgraph s4 ["STATS"]
+                t1(["FOO (1)"])
+                end
+                end
+                t2(["BAR"])
                 end
             '''.stripIndent())
     }

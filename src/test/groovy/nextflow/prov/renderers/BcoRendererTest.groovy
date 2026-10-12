@@ -102,7 +102,8 @@ class BcoRendererTest extends Specification {
     def 'should render a BCO manifest' () {
         given:
         final input = root.resolve('input.txt')
-        final t1 = task('FOO (1)', inputs: [input], outputs: ['foo.txt'])
+        final refs = ['genome.fa', 'genome.fa.fai', 'genes.gtf'].collect { name -> root.resolve(name) }
+        final t1 = task('FOO (1)', inputs: [input, *refs], outputs: ['foo.txt'])
         final fooOut = workDir.resolve("${t1.hash}/foo.txt")
         final t2 = task('BAR (1)', inputs: [fooOut], outputs: ['bar.json'])
         final barOut = workDir.resolve("${t2.hash}/bar.json")
@@ -132,7 +133,7 @@ class BcoRendererTest extends Specification {
         and:
         bco.description_domain.pipeline_steps*.step_number == [1, 2]
         bco.description_domain.pipeline_steps*.description == ['FOO (1)', 'BAR (1)']
-        bco.description_domain.pipeline_steps[0].input_list == [[uri: "file://${input}"]]
+        bco.description_domain.pipeline_steps[0].input_list == [input, *refs].collect { source -> [uri: "file://${source}"] }
         bco.description_domain.pipeline_steps[0].output_list == [[uri: "work/${t1.hash}/foo.txt"]]
         bco.description_domain.pipeline_steps[1].input_list == [[uri: "work/${t1.hash}/foo.txt"]]
 
@@ -145,7 +146,7 @@ class BcoRendererTest extends Specification {
         ] as Set
 
         and:
-        bco.io_domain.input_subdomain == [[uri: [uri: "file://${input}"]]]
+        bco.io_domain.input_subdomain as Set == [input, *refs].collect { source -> [uri: [uri: "file://${source}"]] } as Set
         bco.io_domain.output_subdomain == [[mediatype: 'application/json', uri: [filename: "work/${t2.hash}/bar.json", uri: "file://${published}"]]]
         bco.extension_domain == []
     }

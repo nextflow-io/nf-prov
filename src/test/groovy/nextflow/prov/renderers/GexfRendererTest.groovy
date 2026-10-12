@@ -75,23 +75,30 @@ class GexfRendererTest extends Specification {
     }
 
     /**
-     * Render the graph and return the nodes by label and edges
-     * as [source label, target label] pairs.
+     * Render the graph and return the nodes by id and edges
+     * as [source id, target id] pairs.
      */
     Map render(Set<TaskRun> tasks) {
         new GexfRenderer(new ProvGexfConfig([file: gexfFile.toString()])).render(Mock(Session), tasks, [:], [:])
         final gexf = new XmlSlurper().parse(gexfFile.toFile())
         final nodes = gexf.graph.nodes.node.collectEntries { node -> [node.@id.text(), node] }
         final edges = gexf.graph.edges.edge.collect { edge ->
-            final source = nodes[edge.@source.text()]
-            final target = nodes[edge.@target.text()]
-            assert source != null && target != null : "dangling edge ${edge.@id}"
-            [source.@label.text(), target.@label.text()]
+            final source = edge.@source.text()
+            final target = edge.@target.text()
+            assert source in nodes && target in nodes : "dangling edge ${edge.@id}"
+            [source, target]
         }
-        return [
-            nodes: nodes.values().collectEntries { node -> [node.@label.text(), node] },
-            edges: edges as Set
-        ]
+        return [nodes: nodes, edges: edges as Set]
+    }
+
+    static node(Map graph, String label) {
+        final matches = graph.nodes.values().findAll { node -> node.@label.text() == label }
+        assert matches.size() == 1 : "expected one node with label '${label}'"
+        return matches.first()
+    }
+
+    static Set<List<String>> edgeLabels(Map graph) {
+        graph.edges.collect { source, target -> [graph.nodes[source].@label.text(), graph.nodes[target].@label.text()] } as Set
     }
 
     static Map<String,String> attvalues(node) {
@@ -106,39 +113,44 @@ class GexfRendererTest extends Specification {
         input.text = 'reads'
         final t1 = task('FOO (1)', inputs: [input], outputs: ['foo.txt': 'a'], cached: true)
         final fooOut = workDir.resolve("${t1.hash}/foo.txt")
-        final t2 = task('BAR (1)', inputs: [fooOut], outputs: ['bar.txt': 'bbbbbbbbbb'])
+        // tasks may share a name (e.g. same tag)
+        final t2 = task('BAR (1)', inputs: [fooOut], outputs: ['bar1.txt': 'b'])
+        final t3 = task('BAR (1)', inputs: [fooOut], outputs: ['bar2.txt': 'b'])
 
         when:
-        final graph = render([t1, t2] as Set)
+        final graph = render([t1, t2, t3] as Set)
 
         then:
-        graph.nodes.keySet() == ['FOO (1)', 'BAR (1)', 'input.fastq.gz', 'foo.txt', 'bar.txt'] as Set
-        graph.edges == [
+        graph.nodes.values()*.@label*.text().sort() == ['BAR (1)', 'BAR (1)', 'FOO (1)', 'bar1.txt', 'bar2.txt', 'foo.txt', 'input.fastq.gz']
+        graph.edges.size() == 6
+        edgeLabels(graph) == [
             ['input.fastq.gz', 'FOO (1)'],
             ['FOO (1)', 'foo.txt'],
             ['foo.txt', 'BAR (1)'],
-            ['BAR (1)', 'bar.txt']
+            ['BAR (1)', 'bar1.txt'],
+            ['BAR (1)', 'bar2.txt']
         ] as Set
 
         and:
-        attvalues(graph.nodes['FOO (1)']) == ['0': 'true', '1': 'false', '2': 'task', '4': 'FOO']
-        attvalues(graph.nodes['input.fastq.gz'])['2'] == 'file'
-        attvalues(graph.nodes['input.fastq.gz'])['3'] == input.toString()
-        attvalues(graph.nodes['input.fastq.gz'])['5'] == '5'
-        attvalues(graph.nodes['input.fastq.gz'])['6'] == 'fastq'
-        attvalues(graph.nodes['input.fastq.gz'])['8']
+        attvalues(node(graph, 'FOO (1)')) == ['0': 'true', '1': 'false', '2': 'task', '4': 'FOO']
+        attvalues(node(graph, 'input.fastq.gz'))['2'] == 'file'
+        attvalues(node(graph, 'input.fastq.gz'))['3'] == input.toString()
+        attvalues(node(graph, 'input.fastq.gz'))['5'] == '5'
+        attvalues(node(graph, 'input.fastq.gz'))['6'] == 'fastq'
+        attvalues(node(graph, 'input.fastq.gz'))['8']
     }
 
     def 'should scale file nodes by size' () {
         given:
-        final t = task('FOO (1)', outputs: ['small.txt': 'a', 'large.txt': 'a' * 11])
+        final t = task('FOO (1)', inputs: [root.resolve('missing.txt')], outputs: ['small.txt': 'a', 'large.txt': 'a' * 11])
 
         when:
         final graph = render([t] as Set)
 
         then:
-        graph.nodes['small.txt'].size.@value.text() == '10.0'
-        graph.nodes['large.txt'].size.@value.text() == '100.0'
+        node(graph, 'small.txt').size.@value.text() == '10.0'
+        node(graph, 'large.txt').size.@value.text() == '100.0'
+        node(graph, 'missing.txt').size.isEmpty()
     }
 
     def 'should omit attributes for missing files' () {
@@ -146,7 +158,7 @@ class GexfRendererTest extends Specification {
         final t = task('FOO (1)', inputs: [root.resolve('missing')])
 
         when:
-        final attrs = attvalues(render([t] as Set).nodes['missing'])
+        final attrs = attvalues(node(render([t] as Set), 'missing'))
 
         then:
         attrs.keySet() == ['2', '3'] as Set
