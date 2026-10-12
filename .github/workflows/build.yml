@@ -50,3 +50,23 @@ jobs:
 
       - name: Test
         run: nextflow run nf-prov-test/ -plugins nf-prov@$(cat VERSION)
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate RO-Crate
+        run: |
+          pip install roc-validator
+          rocrate-validator validate --no-paging --verbose -p provenance-run-crate-0.5 results
+
+      # fetch schema from GitHub since the IEEE host rejects non-browser clients
+      - name: Validate BCO
+        run: |
+          pip install check-jsonschema
+          mkdir -p bco-schema
+          for f in 2791object provenance_domain usability_domain description_domain execution_domain parametric_domain io_domain error_domain; do
+            curl -sfL -o bco-schema/$f.json https://raw.githubusercontent.com/biocompute-objects/BCO_Documentation/main/ieee-2791-schema/$f.json
+          done
+          check-jsonschema --base-uri "file://$PWD/bco-schema/" --schemafile bco-schema/2791object.json results/bco.json

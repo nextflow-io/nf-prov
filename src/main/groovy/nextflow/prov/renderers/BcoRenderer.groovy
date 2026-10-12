@@ -19,6 +19,7 @@ package nextflow.prov.renderers
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
+import groovy.json.JsonGenerator
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
@@ -192,7 +193,9 @@ class BcoRenderer implements Renderer {
         bco.etag = etag.toString()
 
         // render BCO manifest to JSON file
-        path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
+        // omit null fields since the BCO schema does not allow them
+        final json = new JsonGenerator.Options().excludeNulls().build().toJson(bco)
+        path.text = JsonOutput.prettyPrint(json)
     }
 
     private List getContributors(Manifest manifest) {

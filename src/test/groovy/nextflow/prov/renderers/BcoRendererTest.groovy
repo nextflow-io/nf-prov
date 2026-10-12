@@ -129,6 +129,8 @@ class BcoRendererTest extends Specification {
         bco.provenance_domain.created == '2026-01-01T00:00:00Z'
         bco.provenance_domain.contributors*.name == ['Alice']
         bco.provenance_domain.contributors[0].contribution == ['authoredBy', 'curatedBy']
+        !bco.provenance_domain.containsKey('derived_from')
+        !bco.provenance_domain.contributors[0].containsKey('email')
 
         and:
         bco.description_domain.pipeline_steps*.step_number == [1, 2]
