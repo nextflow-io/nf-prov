@@ -27,6 +27,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
+import nextflow.file.FilePatternSplitter
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvWrrocConfig
@@ -195,39 +196,41 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final inputValues = params
-            .findAll { name, value -> value != null }
-            .collect { name, value ->
-                final paramId = getWorkflowParamId(name)
-                final normalized = normalizeParamValue(value)
-
-                return [
-                    "@id"          : "${paramId}/value",
-                    "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": paramId],
-                    "name"         : name,
-                    "value"        : normalized
-                ] as Map
-            }
-
         // -- input files
         Map<Path,String> paramInputFiles = [:]
+        Map<String,Map> paramDataEntities = [:]
+        Map<String,String> paramEntityIds = [:]
 
         params.each { name, value ->
             if( !value )
                 return
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
-            if( type != "File" )
+            if( type != "File" && type != "Dataset" )
+                return
+            if( FilePatternSplitter.isMatchingPattern(value) )
                 return
             final source = (value as Path).complete()
-            // don't try to download remote files
-            if( source.fileSystem != FileSystems.default )
+            final remote = source.fileSystem != FileSystems.default
+            // copy local files into the crate
+            if( !remote && type == "File" ) {
+                if( !source.isFile() )
+                    return
+                paramInputFiles.putIfAbsent(source, name)
+                paramEntityIds[name] = getParamFileId(paramInputFiles[source], source)
                 return
-            // don't try to copy local directories
-            if( !source.isFile() )
+            }
+            // reference remote files and local directories by path (without downloading or copying them)
+            if( !remote && !source.isDirectory() )
                 return
-            paramInputFiles.put(source, name)
+            final id = getDataEntityId(source, type)
+            paramDataEntities.putIfAbsent(id, [
+                "@id"        : id,
+                "@type"      : type,
+                "name"       : source.name,
+                "description": "Input ${type == 'Dataset' ? 'directory' : 'file'} specified by params.${name}"
+            ])
+            paramEntityIds[name] = id
         }
 
         final inputFiles = workflowInputs
@@ -240,7 +243,7 @@ class WrrocRenderer implements Renderer {
                     copyParamFile(paramName, source, crateDir)
 
                 withoutNulls([
-                    "@id"           : paramName ? getParamFileId(paramName, source) : normalizePath(source),
+                    "@id"           : paramName ? getParamFileId(paramName, source) : getDataEntityId(source, getType(source)),
                     "@type"         : getType(source),
                     "name"          : source.name,
                     "encodingFormat": ProvHelper.getEncodingFormat(source),
@@ -259,6 +262,37 @@ class WrrocRenderer implements Renderer {
             ]))
             copyParamFile(name, source, crateDir)
         }
+
+        // -- add remote files and local directories specified by params that were not used by any task
+        paramDataEntities.each { id, entity ->
+            if( !inputFiles.any { f -> f["@id"] == id } )
+                inputFiles.add(entity)
+        }
+
+        // -- link input files to the params that specify them
+        inputFiles.each { entity ->
+            final refs = paramEntityIds
+                .findAll { name, id -> id == entity["@id"] }
+                .collect { name, id -> ["@id": getWorkflowParamId(name)] }
+            if( refs )
+                entity["exampleOfWork"] = refs.size() == 1 ? refs.first() : refs
+        }
+
+        // -- input values (file params are represented by their file entities)
+        final inputValues = params
+            .findAll { name, value -> value != null && !paramEntityIds.containsKey(name) }
+            .collect { name, value ->
+                final paramId = getWorkflowParamId(name)
+                final normalized = normalizeParamValue(value)
+
+                return [
+                    "@id"          : "${paramId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": paramId],
+                    "name"         : name,
+                    "value"        : normalized
+                ] as Map
+            }
 
         // -- pipeline outputs
         if( workflowOutputs == null )
@@ -440,7 +474,7 @@ class WrrocRenderer implements Renderer {
                         output ? getTaskOutputId(taskLookup[output], output)
                         : source in paramInputFiles ? getParamFileId(paramInputFiles[source], source)
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
-                        : normalizePath(source)
+                        : getDataEntityId(source, getType(source))
                     ["@id": id]
                 }
                 final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
@@ -879,6 +913,19 @@ class WrrocRenderer implements Renderer {
             return outputDir.relativize(path).toString()
         log.warn "Cannot get relative path for workflow output '${path.toUriString()}'"
         return null
+    }
+
+    /**
+     * Get the crate id of a file or directory outside the crate.
+     *
+     * Directory ids end with a slash, as recommended by RO-Crate.
+     *
+     * @param path
+     * @param type
+     */
+    private String getDataEntityId(Path path, String type) {
+        final id = normalizePath(path)
+        return type == "Dataset" && !id.endsWith("/") ? "${id}/" : id
     }
 
     /**

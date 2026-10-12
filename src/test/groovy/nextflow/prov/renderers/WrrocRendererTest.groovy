@@ -16,6 +16,7 @@
 
 package nextflow.prov.renderers
 
+import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.OffsetDateTime
@@ -353,7 +354,77 @@ class WrrocRendererTest extends Specification {
         graph['input/samples.csv']['@type'] == 'File'
         graph['controls/samples.csv'].description == 'Input file specified by params.controls'
         graph['#param/input'].additionalType == 'File'
+        graph['input/samples.csv'].exampleOfWork == ['@id': '#param/input']
+        graph['controls/samples.csv'].exampleOfWork == ['@id': '#param/controls']
+        !graph.containsKey('#param/input/value')
+        !graph.containsKey('#param/controls/value')
         graph["#task/${t.hash}"].object == [['@id': 'input/samples.csv']]
+    }
+
+    def 'should represent remote input files specified by params as file entities' () {
+        given:
+        // a zip filesystem stands in for a remote filesystem
+        final zipfs = FileSystems.newFileSystem(root.resolve('remote.zip'), [create: 'true'])
+        final input = zipfs.getPath('/samples.csv')
+        input.text = 'id\n1\n'
+        final controls = zipfs.getPath('/controls.csv')
+        controls.text = 'id\n2\n'
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [input])
+
+        when:
+        final graph = render([t] as Set, params: [input: input, controls: controls, reads: zipfs.getPath('/*.fq')])
+
+        then:
+        graph[input.toUriString()].exampleOfWork == ['@id': '#param/input']
+        graph[controls.toUriString()].exampleOfWork == ['@id': '#param/controls']
+        graph[controls.toUriString()].description == 'Input file specified by params.controls'
+        !graph.containsKey('#param/input/value')
+        !graph.containsKey('#param/controls/value')
+        graph['#param/reads/value']['@type'] == 'PropertyValue'
+        graph['#00000000-0000-0000-0000-000000000000'].object.containsAll([
+            ['@id': input.toUriString()],
+            ['@id': controls.toUriString()],
+        ])
+
+        cleanup:
+        zipfs?.close()
+    }
+
+    def 'should represent directories specified by params as dataset entities' () {
+        given:
+        final refs = Files.createDirectories(root.resolve('refs'))
+        final missing = root.resolve('missing')
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [refs])
+
+        when:
+        final graph = render([t] as Set, params: [refs: refs, missing: missing])
+
+        then:
+        final id = refs.toUri().toString()
+        graph[id]['@type'] == 'Dataset'
+        graph[id].exampleOfWork == ['@id': '#param/refs']
+        !graph.containsKey('#param/refs/value')
+        graph['#param/missing/value']['@type'] == 'PropertyValue'
+        graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': id])
+        graph["#task/${t.hash}"].object == [['@id': id]]
+    }
+
+    def 'should link input file to every param that specifies it' () {
+        given:
+        final input = Files.createDirectories(root.resolve('cases')).resolve('samples.csv')
+        input.text = 'id\n1\n'
+
+        when:
+        final graph = render([] as Set, params: [input: input, samples: input])
+
+        then:
+        crateDir.resolve('input/samples.csv').exists()
+        !crateDir.resolve('samples/samples.csv').exists()
+        graph['input/samples.csv'].exampleOfWork == [['@id': '#param/input'], ['@id': '#param/samples']]
+        !graph.containsKey('#param/input/value')
+        !graph.containsKey('#param/samples/value')
     }
 
     def 'should exclude published files outside of crate directory' () {
