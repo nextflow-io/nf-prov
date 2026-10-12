@@ -30,6 +30,7 @@ import nextflow.prov.renderers.BcoRenderer
 import nextflow.prov.renderers.DagRenderer
 import nextflow.prov.renderers.GexfRenderer
 import nextflow.prov.renderers.WrrocRenderer
+import nextflow.prov.util.ProvHelper
 import nextflow.trace.TraceObserverV2
 import nextflow.trace.event.FilePublishEvent
 import nextflow.trace.event.TaskEvent
@@ -93,7 +94,7 @@ class ProvObserver implements TraceObserverV2 {
     void onTaskComplete(TaskEvent event) {
         // skip failed tasks
         final task = event.handler.task
-        if( !task.isSuccess() )
+        if( !ProvHelper.isSuccess(task) )
             return
 
         lock.withLock {

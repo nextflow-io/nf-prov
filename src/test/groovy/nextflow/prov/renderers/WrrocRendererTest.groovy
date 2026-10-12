@@ -33,6 +33,7 @@ import nextflow.script.BaseScript
 import nextflow.script.ProcessDef
 import nextflow.script.ScriptBinding
 import nextflow.script.ScriptMeta
+import nextflow.script.ScriptType
 import nextflow.script.WorkflowMetadata
 import nextflow.script.params.FileOutParam
 import nextflow.util.Duration
@@ -124,6 +125,7 @@ class WrrocRendererTest extends Specification {
             target
         }
         final exitStatus = opts.containsKey('exitStatus') ? opts.exitStatus : 0
+        final type = opts.type ?: ScriptType.SCRIPTLET
         Mock(TaskRun) {
             getProcessor() >> processor
             getName() >> name
@@ -132,6 +134,8 @@ class WrrocRendererTest extends Specification {
             getInputFiles() >> inputs.collect { source -> new FileHolder(source) }
             getOutputsByType(FileOutParam) >> [(Mock(FileOutParam)): outputs]
             getExitStatus() >> exitStatus
+            getType() >> type
+            isSuccess() >> (exitStatus == 0)
             getStderr() >> 'oops'
         }
     }
@@ -298,6 +302,20 @@ class WrrocRendererTest extends Specification {
         then:
         graph["#task/${t.hash}"].actionStatus == 'http://schema.org/FailedActionStatus'
         graph["#task/${t.hash}"].error == 'oops'
+    }
+
+    def 'should record native task as completed' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', type: ScriptType.GROOVY, exitStatus: Integer.MAX_VALUE, outputs: ['foo.txt'])
+
+        when:
+        final graph = render([t] as Set)
+
+        then:
+        graph["#task/${t.hash}"].actionStatus == 'http://schema.org/CompletedActionStatus'
+        !graph["#task/${t.hash}"].containsKey('error')
+        graph["#task/${t.hash}"].result == [['@id': "#task/${t.hash}/foo.txt"]]
     }
 
     def 'should record tmp inputs' () {

@@ -448,6 +448,7 @@ class WrrocRenderer implements Renderer {
         final taskCreateActions = tasks
             .collect { task ->
                 final processDef = processLookup[task.processor]
+                final success = ProvHelper.isSuccess(task)
                 final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
@@ -467,9 +468,9 @@ class WrrocRenderer implements Renderer {
                     "agent"       : agent ? ["@id": agent["@id"]] : null,
                     "object"      : inputs,
                     "result"      : outputs,
-                    "actionStatus": task.exitStatus == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
+                    "actionStatus": success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
-                if( task.exitStatus != 0 )
+                if( !success )
                     result["error"] = task.stderr
                 return result
             }

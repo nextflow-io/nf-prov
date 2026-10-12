@@ -25,6 +25,7 @@ import nextflow.Session
 import nextflow.exception.AbortOperationException
 import nextflow.file.FileHelper
 import nextflow.processor.TaskRun
+import nextflow.script.ScriptType
 import nextflow.script.params.FileOutParam
 
 /**
@@ -81,6 +82,18 @@ class ProvHelper {
      */
     static Path getStageDir(Session session) {
         return session.workDir.resolve("stage-${session.uniqueId}")
+    }
+
+    /**
+     * Determine whether a task completed successfully. Native (exec)
+     * tasks have no exit status, so they succeed if there is no error.
+     *
+     * @param task
+     */
+    static boolean isSuccess(TaskRun task) {
+        return task.type == ScriptType.GROOVY
+            ? task.error == null
+            : task.isSuccess()
     }
 
     /**
