@@ -16,6 +16,7 @@
 
 package nextflow.prov.renderers
 
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
@@ -211,6 +212,7 @@ class BcoRenderer implements Renderer {
         bco.etag = etag
 
         // render BCO manifest to JSON file
+        Files.createDirectories(path.parent)
         path.text = JsonOutput.prettyPrint(generator.toJson(bco))
     }
 

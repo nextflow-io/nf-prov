@@ -83,7 +83,7 @@ class WrrocRenderer implements Renderer {
 
         // get workflow metadata
         final metadata = session.workflowMetadata
-        final crateDir = path.getParent()
+        final crateDir = Files.createDirectories(path.getParent())
         this.projectDir = metadata.projectDir
         this.repository = metadata.repository
         this.normalizer = new PathNormalizer(metadata)
