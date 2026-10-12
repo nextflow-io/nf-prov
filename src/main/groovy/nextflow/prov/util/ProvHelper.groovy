@@ -134,6 +134,21 @@ class ProvHelper {
     }
 
     /**
+     * Find the task output that contains a given path, i.e. the path
+     * itself or a parent directory that was produced by a task.
+     *
+     * @param path
+     * @param taskLookup
+     */
+    static Path findTaskOutput(Path path, Map<Path,TaskRun> taskLookup) {
+        for( def p = path; p != null; p = p.getParent() ) {
+            if( taskLookup.containsKey(p) )
+                return p
+        }
+        return null
+    }
+
+    /**
      * Get the list of workflow inputs. A workflow input is an input file
      * to a task that was not produced by another task.
      *
@@ -143,7 +158,7 @@ class ProvHelper {
     static Set<Path> getWorkflowInputs(Set<TaskRun> tasks, Map<Path,TaskRun> taskLookup) {
         return tasks.stream()
             .flatMap(task -> getTaskInputs(task).values().stream())
-            .filter(path -> !taskLookup[path])
+            .filter(path -> !findTaskOutput(path, taskLookup))
             .collect(Collectors.toSet())
     }
 

@@ -16,6 +16,8 @@
 
 package nextflow.prov.util
 
+import java.nio.file.Path
+
 import nextflow.processor.TaskRun
 import nextflow.script.ScriptType
 import spock.lang.Specification
@@ -42,6 +44,18 @@ class ProvHelperTest extends Specification {
         ScriptType.SCRIPTLET | Integer.MAX_VALUE | null                  | false
         ScriptType.GROOVY    | Integer.MAX_VALUE | null                  | true
         ScriptType.GROOVY    | Integer.MAX_VALUE | new Exception('boom') | false
+    }
+
+    def 'should find task output containing a path' () {
+        given:
+        def task = Mock(TaskRun)
+        def lookup = [(Path.of('/work/ab/outdir')): task]
+
+        expect:
+        ProvHelper.findTaskOutput(Path.of('/work/ab/outdir'), lookup) == Path.of('/work/ab/outdir')
+        ProvHelper.findTaskOutput(Path.of('/work/ab/outdir/sub/a.txt'), lookup) == Path.of('/work/ab/outdir')
+        ProvHelper.findTaskOutput(Path.of('/work/ab/other.txt'), lookup) == null
+        ProvHelper.findTaskOutput(Path.of('/data/a.txt'), lookup) == null
     }
 
 }
