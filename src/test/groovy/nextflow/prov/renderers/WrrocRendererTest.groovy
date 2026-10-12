@@ -335,6 +335,34 @@ class WrrocRendererTest extends Specification {
         !graph.containsKey('#Carol')
     }
 
+    def 'should render workflow diagram from #diagram' () {
+        given:
+        Files.createDirectories(projectDir.resolve('docs')).resolve('diagram.png').text = 'png'
+
+        when:
+        final graph = render([] as Set, manifest: [diagram: diagram])
+
+        then:
+        graph['main.nf'].image == ['@id': diagram]
+        graph[diagram]['@type'] == ['File', 'ImageObject']
+        graph['./'].hasPart.contains(['@id': diagram])
+        copied == Files.exists(crateDir.resolve('docs/diagram.png'))
+
+        where:
+        diagram                              | copied
+        'docs/diagram.png'                   | true
+        'https://example.com/diagram.png'    | false
+    }
+
+    def 'should skip missing workflow diagram' () {
+        when:
+        final graph = render([] as Set, manifest: [diagram: 'missing.png'])
+
+        then:
+        !graph['main.nf'].containsKey('image')
+        !graph.containsKey('missing.png')
+    }
+
     @Unroll
     def 'should record command line in run description: #commandLine' () {
         when:
