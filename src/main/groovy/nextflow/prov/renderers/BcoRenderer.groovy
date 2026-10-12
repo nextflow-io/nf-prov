@@ -83,7 +83,8 @@ class BcoRenderer implements Renderer {
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
         final contributors = getContributors(manifest)
         final nextflowVersion = nextflowMeta.version.toString()
-        final params = session.config.params as Map
+        final params = (session.params as Map).toConfigObject().flatten() as Map<String,Object>
+        final paramSteps = getParamSteps(params, tasks, processSteps)
 
         final config = session.config
         final review                  = config.navigate('prov.formats.bco.provenance_domain.review', []) as List<Map<String,?>>
@@ -156,10 +157,10 @@ class BcoRenderer implements Renderer {
                     acc
                 }
             ],
-            "parametric_domain": params.toConfigObject().flatten().collect( (k, v) -> [
+            "parametric_domain": params.collect( (k, v) -> [
                 "param": k,
                 "value": normalizePath(v.toString()),
-                "step": ""
+                "step": paramSteps[k] ?: ""
             ] ),
             "io_domain": [
                 "input_subdomain": workflowInputs.collect { source -> normalizeUri(source) }.sort().collect { uri -> [
@@ -257,6 +258,53 @@ class BcoRenderer implements Renderer {
             depth += 1
         depths[vertex] = depth
         return depth
+    }
+
+    /**
+     * Get the steps that used each file param, as a comma-separated
+     * list of step numbers. A task uses a file param if one of its
+     * input files is the param path or is under the param directory.
+     *
+     * Non-file params are not traced since their usage can't be
+     * reliably inferred from the task inputs.
+     *
+     * @param params
+     * @param tasks
+     * @param processSteps
+     */
+    private static Map<String,String> getParamSteps(Map<String,Object> params, Set<TaskRun> tasks, Map<TaskProcessor,Integer> processSteps) {
+        final Map<Path,List<String>> paramPaths = [:]
+        for( final entry : params ) {
+            final path = asParamPath(entry.value)
+            if( path != null )
+                paramPaths.computeIfAbsent(path, (k) -> new ArrayList<String>()).add(entry.key)
+        }
+
+        final Map<String,Set<Integer>> result = [:]
+        for( final task : tasks ) {
+            final step = processSteps[task.processor]
+            if( step == null )
+                continue
+            for( final source : ProvHelper.getTaskInputs(task).values() ) {
+                for( def p = source.normalize(); p != null; p = p.getParent() ) {
+                    for( final name : paramPaths.getOrDefault(p, []) )
+                        result.computeIfAbsent(name, (k) -> new TreeSet<Integer>()).add(step)
+                }
+            }
+        }
+        return result.collectEntries { name, steps -> [name, steps.join(',')] } as Map<String,String>
+    }
+
+    private static Path asParamPath(Object value) {
+        // skip blank values, which would resolve to the launch directory
+        if( value !instanceof CharSequence || !value.toString().trim() )
+            return null
+        try {
+            return (value.toString() as Path).complete().normalize()
+        }
+        catch( Exception e ) {
+            return null
+        }
     }
 
     /**
