@@ -217,18 +217,32 @@ class ProvHelper {
 
     /**
      * Get the params whose values are paths, as a mapping
-     * from path to param names.
+     * from path to param names. Paths nested in lists and
+     * maps (e.g. records) are attributed to the enclosing param.
      *
      * @param params
      */
     static Map<Path,List<String>> getParamPaths(Map<String,?> params) {
         final Map<Path,List<String>> result = [:]
-        for( final entry : params.entrySet() ) {
-            final path = asParamPath(entry.value)
-            if( path != null )
-                result.computeIfAbsent(path, (k) -> new ArrayList<String>()).add(entry.key)
-        }
+        for( final entry : params.entrySet() )
+            addParamPaths(entry.key, entry.value, result)
         return result
+    }
+
+    private static void addParamPaths(String name, Object value, Map<Path,List<String>> result) {
+        if( value instanceof Map ) {
+            for( final v : value.values() )
+                addParamPaths(name, v, result)
+            return
+        }
+        if( value instanceof Collection ) {
+            for( final v : value )
+                addParamPaths(name, v, result)
+            return
+        }
+        final path = asParamPath(value)
+        if( path != null && !result.getOrDefault(path, []).contains(name) )
+            result.computeIfAbsent(path, (k) -> new ArrayList<String>()).add(name)
     }
 
     private static Path asParamPath(Object value) {

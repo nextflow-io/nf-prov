@@ -95,7 +95,7 @@ class WrrocRenderer implements Renderer {
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = metadata.nextflow.version.toString()
-        final params = session.params
+        final params = session.params.toPlainMap()
 
         // parse wrroc configuration
         final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
