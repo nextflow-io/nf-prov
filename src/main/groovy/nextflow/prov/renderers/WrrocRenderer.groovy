@@ -27,6 +27,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
+import nextflow.file.FilePatternSplitter
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvWrrocConfig
@@ -195,39 +196,41 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final inputValues = params
-            .findAll { name, value -> value != null }
-            .collect { name, value ->
-                final paramId = getWorkflowParamId(name)
-                final normalized = normalizeParamValue(value)
-
-                return [
-                    "@id"          : "${paramId}/value",
-                    "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": paramId],
-                    "name"         : name,
-                    "value"        : normalized
-                ] as Map
-            }
-
         // -- input files
         Map<Path,String> paramInputFiles = [:]
+        Map<String,Map> paramDataEntities = [:]
+        Map<String,String> paramEntityIds = [:]
 
         params.each { name, value ->
             if( !value )
                 return
             final schema = paramSchema[name] ?: [:]
             final type = getParameterType(name, value, schema)
-            if( type != "File" )
+            if( type != "File" && type != "Dataset" )
+                return
+            if( FilePatternSplitter.isMatchingPattern(value) )
                 return
             final source = (value as Path).complete()
-            // don't try to download remote files
-            if( source.fileSystem != FileSystems.default )
+            final remote = source.fileSystem != FileSystems.default
+            // copy local files into the crate
+            if( !remote && type == "File" ) {
+                if( !source.isFile() )
+                    return
+                paramInputFiles.putIfAbsent(source, name)
+                paramEntityIds[getWorkflowParamId(name)] = getParamFileId(paramInputFiles[source], source)
                 return
-            // don't try to copy local directories
-            if( !source.isFile() )
+            }
+            // reference remote files and local directories by path (without downloading or copying them)
+            if( !remote && !source.isDirectory() )
                 return
-            paramInputFiles.put(source, name)
+            final id = getDataEntityId(source, type)
+            paramDataEntities.putIfAbsent(id, [
+                "@id"        : id,
+                "@type"      : type,
+                "name"       : source.name,
+                "description": "Input ${type == 'Dataset' ? 'directory' : 'file'} specified by params.${name}"
+            ])
+            paramEntityIds[getWorkflowParamId(name)] = id
         }
 
         final inputFiles = workflowInputs
@@ -240,7 +243,7 @@ class WrrocRenderer implements Renderer {
                     copyParamFile(paramName, source, crateDir)
 
                 withoutNulls([
-                    "@id"           : paramName ? getParamFileId(paramName, source) : normalizePath(source),
+                    "@id"           : paramName ? getParamFileId(paramName, source) : getDataEntityId(source, getType(source)),
                     "@type"         : getType(source),
                     "name"          : source.name,
                     "encodingFormat": ProvHelper.getEncodingFormat(source),
@@ -259,6 +262,30 @@ class WrrocRenderer implements Renderer {
             ]))
             copyParamFile(name, source, crateDir)
         }
+
+        // -- add remote files and local directories specified by params that were not used by any task
+        paramDataEntities.each { id, entity ->
+            if( !inputFiles.any { f -> f["@id"] == id } )
+                inputFiles.add(entity)
+        }
+
+        linkExampleOfWork(inputFiles, paramEntityIds)
+
+        // -- input values (file params are represented by their file entities)
+        final inputValues = params
+            .findAll { name, value -> value != null && !paramEntityIds.containsKey(getWorkflowParamId(name)) }
+            .collect { name, value ->
+                final paramId = getWorkflowParamId(name)
+                final normalized = normalizeParamValue(value)
+
+                return [
+                    "@id"          : "${paramId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": paramId],
+                    "name"         : name,
+                    "value"        : normalized
+                ] as Map
+            }
 
         // -- pipeline outputs
         if( workflowOutputs == null )
@@ -285,21 +312,6 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
-        final outputValues = workflowOutputs
-            .findAll { name, value -> value != null }
-            .collect { name, value ->
-                final outputId = getWorkflowOutputId(name)
-                final normalized = getWorkflowOutputPath(value, session)
-
-                return withoutNulls([
-                    "@id"          : "${outputId}/value",
-                    "@type"        : "PropertyValue",
-                    "exampleOfWork": ["@id": outputId],
-                    "name"         : name,
-                    "value"        : normalized
-                ])
-            }
-
         // -- output files
         final outputFiles = publishedFiles
             .findAll { source, target ->
@@ -311,10 +323,45 @@ class WrrocRenderer implements Renderer {
             }
             .collect { source, target ->
                 withoutNulls([
-                    "@id"           : crateDir.relativize(target).toString(),
+                    "@id"           : getCrateFileId(target, crateDir),
                     "@type"         : getType(target),
                     "name"          : target.name,
                     "encodingFormat": ProvHelper.getEncodingFormat(target),
+                ])
+            }
+
+        // -- add workflow outputs (e.g. index files) that were not published by a task
+        Map<String,String> outputEntityIds = [:]
+
+        workflowOutputs.each { name, value ->
+            if( value == null || !value.startsWith(crateDir) )
+                return
+            final id = getCrateFileId(value, crateDir)
+            if( !outputFiles.any { f -> f["@id"] == id } ) {
+                outputFiles.add(withoutNulls([
+                    "@id"           : id,
+                    "@type"         : getType(value),
+                    "name"          : value.name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(value),
+                ]))
+            }
+            outputEntityIds[getWorkflowOutputId(name)] = id
+        }
+        linkExampleOfWork(outputFiles, outputEntityIds)
+
+        // -- output values (outputs in the crate are represented by their file entities)
+        final outputValues = workflowOutputs
+            .findAll { name, value -> value != null && !outputEntityIds.containsKey(getWorkflowOutputId(name)) }
+            .collect { name, value ->
+                final outputId = getWorkflowOutputId(name)
+                final normalized = getWorkflowOutputPath(value, session)
+
+                return withoutNulls([
+                    "@id"          : "${outputId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": outputId],
+                    "name"         : name,
+                    "value"        : normalized
                 ])
             }
 
@@ -440,7 +487,7 @@ class WrrocRenderer implements Renderer {
                         output ? getTaskOutputId(taskLookup[output], output)
                         : source in paramInputFiles ? getParamFileId(paramInputFiles[source], source)
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
-                        : normalizePath(source)
+                        : getDataEntityId(source, getType(source))
                     ["@id": id]
                 }
                 final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
@@ -486,7 +533,7 @@ class WrrocRenderer implements Renderer {
                     "name"        : "publish",
                     "instrument"  : ["@id": softwareApplicationId],
                     "object"      : ["@id": getTaskOutputId(task, sourceName)],
-                    "result"      : ["@id": crateDir.relativize(target).toString()],
+                    "result"      : ["@id": getCrateFileId(target, crateDir)],
                     "actionStatus": "http://schema.org/CompletedActionStatus"
                 ]
             }
@@ -618,10 +665,13 @@ class WrrocRenderer implements Renderer {
                     "endTime"   : dateCompleted,
                     "instrument": ["@id": mainScriptId],
                     "object"    : [
-                        *asReferences(propertyValues),
+                        *asReferences(inputValues),
                         *asReferences(inputFiles),
                     ],
-                    "result"    : asReferences(outputFiles)
+                    "result"    : [
+                        *asReferences(outputValues),
+                        *asReferences(outputFiles),
+                    ]
                 ]),
                 agent,
                 organization,
@@ -879,6 +929,47 @@ class WrrocRenderer implements Renderer {
             return outputDir.relativize(path).toString()
         log.warn "Cannot get relative path for workflow output '${path.toUriString()}'"
         return null
+    }
+
+    /**
+     * Get the crate id of a file or directory outside the crate.
+     *
+     * Directory ids end with a slash, as recommended by RO-Crate.
+     *
+     * @param path
+     * @param type
+     */
+    private String getDataEntityId(Path path, String type) {
+        final id = normalizePath(path)
+        return type == "Dataset" && !id.endsWith("/") ? "${id}/" : id
+    }
+
+    /**
+     * Get the crate id of a file or directory inside the crate.
+     *
+     * @param path
+     * @param crateDir
+     */
+    private static String getCrateFileId(Path path, Path crateDir) {
+        final id = crateDir.relativize(path).toString()
+        return getType(path) == "Dataset" ? "${id}/" : id
+    }
+
+    /**
+     * Link data entities to the formal parameters that they are
+     * values of.
+     *
+     * @param entities
+     * @param entityIds map of formal parameter id to entity id
+     */
+    private static void linkExampleOfWork(List<Map> entities, Map<String,String> entityIds) {
+        for( final entity : entities ) {
+            final refs = entityIds
+                .findAll { paramId, id -> id == entity["@id"] }
+                .collect { paramId, id -> ["@id": paramId] }
+            if( refs )
+                entity["exampleOfWork"] = refs.size() == 1 ? refs.first() : refs
+        }
     }
 
     /**
