@@ -26,9 +26,11 @@ import nextflow.NextflowMeta
 import nextflow.Session
 import nextflow.SysEnv
 import nextflow.config.Manifest
+import nextflow.dag.DAG
 import nextflow.exception.AbortOperationException
 import nextflow.file.FileHolder
 import nextflow.processor.TaskId
+import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvBcoConfig
 import nextflow.script.WorkflowMetadata
@@ -71,6 +73,33 @@ class BcoRendererTest extends Specification {
             getHash() >> hash
             getInputFiles() >> inputs.collect { source -> new FileHolder(source) }
             getOutputsByType(FileOutParam) >> [(Mock(FileOutParam)): outputs]
+            getProcessor() >> opts.process
+        }
+    }
+
+    /**
+     * Create a workflow DAG from a list of edges, where each
+     * vertex is either a process or an operator label.
+     *
+     * @param edges
+     */
+    DAG dag(List<List> edges) {
+        final Map<Object,DAG.Vertex> vertices = [:]
+        final vertex = { node ->
+            vertices.computeIfAbsent(node) { _ ->
+                Mock(DAG.Vertex) { getProcess() >> (node instanceof TaskProcessor ? node : null) }
+            }
+        }
+        final dagEdges = edges.collect { from, to ->
+            final edge = Mock(DAG.Edge) {
+                getFrom() >> vertex(from)
+                getTo() >> vertex(to)
+            }
+            edge
+        }
+        Mock(DAG) {
+            getVertices() >> vertices.values().toList()
+            getEdges() >> dagEdges
         }
     }
 
@@ -88,6 +117,7 @@ class BcoRendererTest extends Specification {
         Mock(Session) {
             getConfig() >> [params: opts.params ?: [:], prov: [formats: [bco: opts.bco ?: [:]]]]
             getWorkflowMetadata() >> metadata
+            getDag() >> (opts.dag ?: new DAG())
         }
     }
 
@@ -103,9 +133,11 @@ class BcoRendererTest extends Specification {
         given:
         final input = root.resolve('input.txt')
         final refs = ['genome.fa', 'genome.fa.fai', 'genes.gtf'].collect { name -> root.resolve(name) }
-        final t1 = task('FOO (1)', inputs: [input, *refs], outputs: ['foo.txt'])
+        final foo = Mock(TaskProcessor)
+        final bar = Mock(TaskProcessor)
+        final t1 = task('FOO (1)', process: foo, inputs: [input, *refs], outputs: ['foo.txt'])
         final fooOut = workDir.resolve("${t1.hash}/foo.txt")
-        final t2 = task('BAR (1)', inputs: [fooOut], outputs: ['bar.json'])
+        final t2 = task('BAR (1)', process: bar, inputs: [fooOut], outputs: ['bar.json'])
         final barOut = workDir.resolve("${t2.hash}/bar.json")
         barOut.text = '{}'
         final published = root.resolve('results/bar.json')
@@ -113,6 +145,7 @@ class BcoRendererTest extends Specification {
         when:
         final bco = render(
             [t2, t1] as Set,
+            dag: dag([[foo, bar]]),
             manifest: [name: 'test', version: '1.0', license: 'MIT', contributors: [[name: 'Alice', contribution: ['author', 'maintainer']]]],
             params: [input: input.toString(), opts: [n: 1]],
             publishedFiles: [(barOut): published])
@@ -143,8 +176,8 @@ class BcoRendererTest extends Specification {
         bco.execution_domain.script == [[uri: [uri: "file://${projectDir}/main.nf"]]]
         bco.execution_domain.software_prerequisites[0].version == NextflowMeta.instance.version.toString()
         bco.parametric_domain as Set == [
-            [param: 'input', value: "file://${input}", step: '0'],
-            [param: 'opts.n', value: '1', step: '0']
+            [param: 'input', value: "file://${input}", step: ''],
+            [param: 'opts.n', value: '1', step: '']
         ] as Set
 
         and:
@@ -198,6 +231,37 @@ class BcoRendererTest extends Specification {
         expect:
         render([] as Set).etag == render([] as Set).etag
         render([] as Set).etag != render([] as Set, manifest: [name: 'other']).etag
+    }
+
+    def 'should number pipeline steps by process depth in the workflow DAG' () {
+        given:
+        final (a, b, c, d) = (1..4).collect { Mock(TaskProcessor) }
+        final tasks = [
+            task('D (1)', process: d),
+            task('C (1)', process: c),
+            task('B (2)', process: b),
+            task('B (1)', process: b),
+            task('A (1)', process: a),
+        ] as Set
+
+        when:
+        // A -> B, A -> map -> C, B -> D, C -> D
+        final bco = render(tasks, dag: dag([[a, b], [a, 'map'], ['map', c], [b, d], [c, d]]))
+
+        then:
+        bco.description_domain.pipeline_steps*.description == ['A (1)', 'B (1)', 'B (2)', 'C (1)', 'D (1)']
+        bco.description_domain.pipeline_steps*.step_number == [1, 2, 2, 2, 3]
+    }
+
+    def 'should handle cycles in the workflow DAG' () {
+        given:
+        final (a, b) = (1..2).collect { Mock(TaskProcessor) }
+
+        when:
+        final bco = render([task('A (1)', process: a), task('B (1)', process: b)] as Set, dag: dag([[a, b], [b, a]]))
+
+        then:
+        bco.description_domain.pipeline_steps*.step_number.every { n -> n in [1, 2] }
     }
 
     def 'should render published files independent of publish order' () {
