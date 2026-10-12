@@ -136,8 +136,8 @@ class BcoRendererTest extends Specification {
         bco.description_domain.pipeline_steps*.step_number == [1, 2]
         bco.description_domain.pipeline_steps*.description == ['FOO (1)', 'BAR (1)']
         bco.description_domain.pipeline_steps[0].input_list == [input, *refs].collect { source -> [uri: "file://${source}"] }
-        bco.description_domain.pipeline_steps[0].output_list == [[uri: "work/${t1.hash}/foo.txt"]]
-        bco.description_domain.pipeline_steps[1].input_list == [[uri: "work/${t1.hash}/foo.txt"]]
+        bco.description_domain.pipeline_steps[0].output_list == [[uri: "file://${fooOut}"]]
+        bco.description_domain.pipeline_steps[1].input_list == [[uri: "file://${fooOut}"]]
 
         and:
         bco.execution_domain.script == ["file://${projectDir}/main.nf"]
