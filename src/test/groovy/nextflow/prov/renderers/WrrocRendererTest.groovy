@@ -148,7 +148,7 @@ class WrrocRendererTest extends Specification {
             getWorkDir() >> workDir
             getScriptFile() >> projectDir.resolve('main.nf')
             getProjectName() >> 'test'
-            getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline'])
+            getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline', version: '1.0.0'])
             getStart() >> OffsetDateTime.now()
             getComplete() >> OffsetDateTime.now()
             getNextflow() >> NextflowMeta.instance
@@ -218,6 +218,7 @@ class WrrocRendererTest extends Specification {
         final t2 = task(bar, 'BAR (1)', inputs: [fooOut], outputs: ['bar.txt'])
         final barOut = t2.workDir.resolve('bar.txt')
         final published = Files.createFile(crateDir.resolve('bar.txt'))
+        projectDir.resolve('README.md').text = '# test'
 
         when:
         final graph = render(
@@ -230,23 +231,37 @@ class WrrocRendererTest extends Specification {
         then:
         graph['ro-crate-metadata.json'].about == ['@id': './']
         graph['./'].mainEntity == ['@id': 'main.nf']
-        graph['./'].license == 'https://spdx.org/licenses/Apache-2.0'
+        graph['./'].license == ['@id': 'https://spdx.org/licenses/Apache-2.0']
         graph['main.nf'].step as Set == [['@id': '#process-step/WF:FOO'], ['@id': '#process-step/WF:BAR']] as Set
         graph['nextflow.config']
+        graph['https://spdx.org/licenses/Apache-2.0']['@type'] == 'CreativeWork'
+        !graph['./'].hasPart.contains(['@id': 'https://spdx.org/licenses/Apache-2.0'])
+        graph['README.md'].about == ['@id': './']
+        graph['README.md'].encodingFormat == 'text/markdown'
+        graph['main.nf'].version == '1.0.0'
+        graph['main.nf'].input == ['@id': '#param/input']
+        graph['main.nf'].output == ['@id': '#output/bar']
+
+        and:
+        final run = graph['#00000000-0000-0000-0000-000000000000']
+        run.startTime ==~ /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/
+        run.endTime ==~ /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}/
+        graph[graph['main.nf#organize'].instrument['@id']].softwareVersion == NextflowMeta.instance.version.toString()
 
         and:
         graph["#task/${t1.hash}"].instrument == ['@id': '#module/modules/foo/main.nf/FOO']
-        graph["#task/${t1.hash}"].object == [['@id': input.toUri().toString()]]
-        graph["#task/${t1.hash}"].result == [['@id': "#task/${t1.hash}/foo.txt"]]
+        graph["#task/${t1.hash}"].object == ['@id': input.toUri().toString()]
+        graph["#task/${t1.hash}"].result == ['@id': "#task/${t1.hash}/foo.txt"]
         graph["#task/${t2.hash}"].instrument == ['@id': '#module/modules/bar/main.nf/FOO']
-        graph["#task/${t2.hash}"].object == [['@id': "#task/${t1.hash}/foo.txt"]]
+        graph["#task/${t2.hash}"].object == ['@id': "#task/${t1.hash}/foo.txt"]
 
         and:
         graph["#publish/${t2.hash}/bar.txt"].object == ['@id': "#task/${t2.hash}/bar.txt"]
         graph["#publish/${t2.hash}/bar.txt"].result == ['@id': 'bar.txt']
+        graph["#publish/${t2.hash}/bar.txt"].agent == ['@id': 'https://orcid.org/0000-0000-0000-0000']
         graph['bar.txt'].exampleOfWork == ['@id': '#output/bar']
         !graph.containsKey('#output/bar/value')
-        graph['#00000000-0000-0000-0000-000000000000'].result == [['@id': 'bar.txt']]
+        graph['#00000000-0000-0000-0000-000000000000'].result == ['@id': 'bar.txt']
     }
 
     def 'should add workflow outputs that were not published by a task' () {
@@ -308,7 +323,7 @@ class WrrocRendererTest extends Specification {
         then:
         final moduleId = '#module/modules/fastqc/main.nf/FASTQC'
         graph[moduleId].name == 'fastqc'
-        graph[moduleId].hasPart == [['@id': "${moduleId}/fastqc".toString()]]
+        graph[moduleId].hasPart == ['@id': "${moduleId}/fastqc".toString()]
         graph[moduleId].url == modulePath.toUri().toString()
         graph["${moduleId}/fastqc".toString()].description == 'A quality control tool'
     }
@@ -337,7 +352,7 @@ class WrrocRendererTest extends Specification {
         then:
         graph["#task/${t.hash}"].actionStatus == 'http://schema.org/CompletedActionStatus'
         !graph["#task/${t.hash}"].containsKey('error')
-        graph["#task/${t.hash}"].result == [['@id': "#task/${t.hash}/foo.txt"]]
+        graph["#task/${t.hash}"].result == ['@id': "#task/${t.hash}/foo.txt"]
     }
 
     def 'should record tmp inputs' () {
@@ -352,7 +367,7 @@ class WrrocRendererTest extends Specification {
 
         then:
         graph['#tmp/collected.txt']['@type'] == 'CreativeWork'
-        graph["#task/${t.hash}"].object == [['@id': '#tmp/collected.txt']]
+        graph["#task/${t.hash}"].object == ['@id': '#tmp/collected.txt']
         !graph.containsKey(tmpFile.toUri().toString())
     }
 
@@ -378,7 +393,7 @@ class WrrocRendererTest extends Specification {
         graph['controls/samples.csv'].exampleOfWork == ['@id': '#param/controls']
         !graph.containsKey('#param/input/value')
         !graph.containsKey('#param/controls/value')
-        graph["#task/${t.hash}"].object == [['@id': 'input/samples.csv']]
+        graph["#task/${t.hash}"].object == ['@id': 'input/samples.csv']
     }
 
     def 'should represent remote input files specified by params as file entities' () {
@@ -428,7 +443,7 @@ class WrrocRendererTest extends Specification {
         !graph.containsKey('#param/refs/value')
         graph['#param/missing/value']['@type'] == 'PropertyValue'
         graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': id])
-        graph["#task/${t.hash}"].object == [['@id': id]]
+        graph["#task/${t.hash}"].object == ['@id': id]
     }
 
     def 'should link input file to every param that specifies it' () {
@@ -459,7 +474,7 @@ class WrrocRendererTest extends Specification {
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])
         !graph['#output/foo/value'].containsKey('value')
-        graph['#00000000-0000-0000-0000-000000000000'].result == [['@id': '#output/foo/value']]
+        graph['#00000000-0000-0000-0000-000000000000'].result == ['@id': '#output/foo/value']
         !graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': '#output/foo/value'])
         !graph.values().any { entity -> entity.name == 'publish' && entity.result == ['@id': '../foo.txt'] }
     }
@@ -483,6 +498,7 @@ class WrrocRendererTest extends Specification {
             contactPoint: ['@id': 'mailto:alice@example.com'],
             affiliation: ['@id': 'https://ror.org/000000000']
         ]
+        graph['https://ror.org/000000000'].url == 'https://ror.org/000000000'
         graph['https://ror.org/000000000'].contactPoint == ['@id': '+1-555-0100']
         graph['mailto:alice@example.com'].url == 'https://orcid.org/0000-0000-0000-0001'
         graph['+1-555-0100'].url == 'https://ror.org/000000000'
