@@ -61,7 +61,7 @@ class BcoRenderer implements Renderer {
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,List<Path>> workflowOutputs, Map<Path,Path> publishedFiles) {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
