@@ -405,7 +405,13 @@ class WrrocRendererTest extends Specification {
         final modulePath = projectDir.resolve('modules/fastqc/main.nf')
         final owner = script(modulePath, ['FASTQC'])
         modulePath.parent.resolve('meta.yml').text = '''\
-            name: fastqc
+            name: nf-core/fastqc
+            version: 1.0.0
+            description: Run FastQC on sequenced reads
+            license: MIT
+            keywords:
+              - quality control
+              - qc
             tools:
               - fastqc:
                   description: A quality control tool
@@ -417,7 +423,11 @@ class WrrocRendererTest extends Specification {
 
         then:
         final moduleId = '#module/modules/fastqc/main.nf/FASTQC'
-        graph[moduleId].name == 'fastqc'
+        graph[moduleId].name == 'nf-core/fastqc'
+        graph[moduleId].description == 'Run FastQC on sequenced reads'
+        graph[moduleId].softwareVersion == '1.0.0'
+        graph[moduleId].license == 'MIT'
+        graph[moduleId].keywords == ['quality control', 'qc']
         graph[moduleId].hasPart == ['@id': "${moduleId}/fastqc".toString()]
         graph[moduleId].url == modulePath.toUri().toString()
         graph["${moduleId}/fastqc".toString()].description == 'A quality control tool'
