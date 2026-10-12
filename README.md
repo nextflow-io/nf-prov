@@ -6,6 +6,8 @@ Nextflow plugin to render provenance reports for pipeline runs. Supports standar
 
 | Version |	Minimum Nextflow version |
 | ------- | ------------------------ |
+| 1.8.x   | 26.10 |
+| 1.7.x   | 25.10 |
 | 1.6.x   | 25.10 |
 | 1.5.x   | 25.04 |
 | 1.4.x   | 24.10 |
