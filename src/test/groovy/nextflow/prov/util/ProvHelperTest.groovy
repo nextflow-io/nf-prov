@@ -58,4 +58,21 @@ class ProvHelperTest extends Specification {
         ProvHelper.findTaskOutput(Path.of('/data/a.txt'), lookup) == null
     }
 
+    def 'should find params whose path contains a path' () {
+        given:
+        def paramPaths = ProvHelper.getParamPaths([
+            reads: '/data/reads.fq',
+            refs: Path.of('/data/refs'),
+            index: '/data/refs/index',
+            blank: '',
+            count: 8,
+        ])
+
+        expect:
+        paramPaths.keySet() == [Path.of('/data/reads.fq'), Path.of('/data/refs'), Path.of('/data/refs/index')] as Set
+        ProvHelper.findParams(Path.of('/data/reads.fq'), paramPaths) == ['reads']
+        ProvHelper.findParams(Path.of('/data/refs/index/genome.idx'), paramPaths) == ['index', 'refs']
+        ProvHelper.findParams(Path.of('/data/other.txt'), paramPaths) == []
+    }
+
 }

@@ -234,24 +234,25 @@ class WrrocRenderer implements Renderer {
             paramEntityIds[getWorkflowParamId(name)] = id
         }
 
-        final inputFiles = workflowInputs
+        final inputEntities = workflowInputs
             .findAll { source ->
                 !ProvHelper.isTmpInput(source, session)
             }
-            .collect { source ->
+            .collectEntries { source ->
                 final paramName = paramInputFiles[source]
                 if( paramName )
                     copyParamFile(paramName, source, crateDir)
                 else if( isLocalProjectFile(source) )
                     copyProjectFile(source, crateDir)
 
-                withoutNulls([
+                [source, withoutNulls([
                     "@id"           : paramName ? getParamFileId(paramName, source) : getDataEntityId(source, getType(source)),
                     "@type"         : getType(source),
                     "name"          : source.name,
                     "encodingFormat": ProvHelper.getEncodingFormat(source),
-                ])
-            }
+                ])]
+            } as Map<Path,Map>
+        final inputFiles = inputEntities.values().toList()
 
         // -- copy local input files specified by params that were not used by any task
         paramInputFiles.each { source, name ->
@@ -273,6 +274,7 @@ class WrrocRenderer implements Renderer {
         }
 
         linkExampleOfWork(inputFiles, paramEntityIds)
+        linkParamDirectoryParts(inputFiles, inputEntities, ProvHelper.getParamPaths(params), paramEntityIds)
 
         // -- input values (file params are represented by their file entities)
         final inputValues = params
@@ -442,6 +444,7 @@ class WrrocRenderer implements Renderer {
                     }
             }
 
+        final processSteps = ProvHelper.getProcessSteps(session.dag)
         final howToSteps = taskProcessors
             .collect() { process ->
                 final processDef = processLookup[process]
@@ -449,7 +452,7 @@ class WrrocRenderer implements Renderer {
                     "@id"        : getProcessStepId(process),
                     "@type"      : "HowToStep",
                     "workExample": processDef ? ["@id": getModuleId(processDef)] : null,
-                    "position"   : process.getId()
+                    "position"   : processSteps[process]
                 ])
             }
 
@@ -996,6 +999,33 @@ class WrrocRenderer implements Renderer {
                 .collect { paramId, id -> ["@id": paramId] }
             if( refs )
                 entity["exampleOfWork"] = refs.size() == 1 ? refs.first() : refs
+        }
+    }
+
+    /**
+     * Link directories specified by params to the input files
+     * that they contain.
+     *
+     * @param entities
+     * @param inputEntities map of input file to entity
+     * @param paramPaths map of param path to param names
+     * @param entityIds map of formal parameter id to entity id
+     */
+    private void linkParamDirectoryParts(List<Map> entities, Map<Path,Map> inputEntities, Map<Path,List<String>> paramPaths, Map<String,String> entityIds) {
+        final Map<String,Map> datasets = entities
+            .findAll { entity -> entity["@type"] == "Dataset" }
+            .collectEntries { entity -> [entity["@id"], entity] }
+        final Map<String,Set<String>> parts = [:]
+        inputEntities.each { source, entity ->
+            final id = entity["@id"] as String
+            for( final name : ProvHelper.findParams(source, paramPaths) ) {
+                final datasetId = entityIds[getWorkflowParamId(name)]
+                if( datasets.containsKey(datasetId) && datasetId != id )
+                    parts.computeIfAbsent(datasetId, (k) -> new TreeSet<String>()).add(id)
+            }
+        }
+        parts.each { datasetId, ids ->
+            datasets[datasetId]["hasPart"] = ids.collect { id -> ["@id": id] }
         }
     }
 
