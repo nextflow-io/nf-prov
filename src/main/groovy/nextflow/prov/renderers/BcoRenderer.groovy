@@ -83,7 +83,7 @@ class BcoRenderer implements Renderer {
         final dateCreated = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(metadata.start)
         final contributors = getContributors(manifest)
         final nextflowVersion = nextflowMeta.version.toString()
-        final params = (session.params as Map).toConfigObject().flatten() as Map<String,Object>
+        final params = session.params.toPlainMap().toConfigObject().flatten() as Map<String,Object>
         final paramSteps = getParamSteps(params, tasks, processSteps)
 
         final config = session.config

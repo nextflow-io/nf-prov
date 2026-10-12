@@ -76,12 +76,14 @@ class ProvHelperTest extends Specification {
             index: '/data/refs/index',
             blank: '',
             count: 8,
+            samples: [[fastq: '/data/a.fq'], [fastq: Path.of('/data/b.fq')]],
         ])
 
         expect:
-        paramPaths.keySet() == [Path.of('/data/reads.fq'), Path.of('/data/refs'), Path.of('/data/refs/index')] as Set
+        paramPaths.keySet() == [Path.of('/data/reads.fq'), Path.of('/data/refs'), Path.of('/data/refs/index'), Path.of('/data/a.fq'), Path.of('/data/b.fq')] as Set
         ProvHelper.findParams(Path.of('/data/reads.fq'), paramPaths) == ['reads']
         ProvHelper.findParams(Path.of('/data/refs/index/genome.idx'), paramPaths) == ['index', 'refs']
+        ProvHelper.findParams(Path.of('/data/b.fq'), paramPaths) == ['samples']
         ProvHelper.findParams(Path.of('/data/other.txt'), paramPaths) == []
     }
 
