@@ -1,4 +1,6 @@
 
+include { COUNT_LINES } from './modules/count_lines'
+
 params.constant = "foo"
 
 process ECHO_SCRIPT {
@@ -53,6 +55,7 @@ workflow {
     inputs_ch   = prefixes_ch.combine(constant_ch)
     ECHO_SCRIPT(inputs_ch)
     ECHO_EXEC(inputs_ch)
+    COUNT_LINES(ECHO_EXEC.out.txt)
 
     samples_ch = channel.fromPath(params.input).splitCsv(header: true)
     counts_ch = WC_SAMPLE(samples_ch)
@@ -60,6 +63,7 @@ workflow {
     publish:
     script = ECHO_SCRIPT.out
     exec = ECHO_EXEC.out
+    lines = COUNT_LINES.out
     counts = counts_ch
 }
 
@@ -76,6 +80,10 @@ output {
         index {
             path 'exec.json'
         }
+    }
+
+    lines {
+        path 'lines'
     }
 
     counts {
