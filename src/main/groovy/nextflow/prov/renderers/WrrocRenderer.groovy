@@ -69,8 +69,8 @@ class WrrocRenderer implements Renderer {
     // List of contact points (people, organizations) to be added
     private List<Map> contactPoints = []
 
-    WrrocRenderer(ProvWrrocConfig config) {
-        path = (config.file as Path).complete()
+    WrrocRenderer(ProvWrrocConfig config, Path directory=null) {
+        path = ProvHelper.resolveReportPath(config.file, directory)
         overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)

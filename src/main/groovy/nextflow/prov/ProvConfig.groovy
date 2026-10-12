@@ -36,6 +36,12 @@ class ProvConfig implements ConfigScope {
     ''')
     final boolean enabled
 
+    @ConfigOption
+    @Description('''
+        The directory where the provenance reports should be saved. The path is resolved against the workflow output directory (`outputDir`). It must be a relative path within the output directory, and it cannot be used when a report file is an absolute path. By default, it is not used and report files are resolved against the launch directory.
+    ''')
+    final String directory
+
     @Description('''
         Configuration scope for the desired output formats.
     ''')
@@ -51,6 +57,7 @@ class ProvConfig implements ConfigScope {
 
     ProvConfig(Map opts) {
         enabled = opts.enabled != null ? opts.enabled as boolean : true
+        directory = opts.directory
         formats = opts.formats ? new ProvFormatsConfig(opts.formats as Map) : null
         patterns = opts.patterns as List<String> ?: []
     }

@@ -56,6 +56,41 @@ class ProvHelper {
     }
 
     /**
+     * Resolve the `prov.directory` config option against the
+     * workflow output directory.
+     *
+     * @param directory
+     * @param outputDir
+     */
+    static Path resolveReportDirectory(String directory, Path outputDir) {
+        if( !directory )
+            return null
+        if( (directory as Path).isAbsolute() )
+            throw new AbortOperationException("Config option `prov.directory` must be a relative path -- offending value: ${directory}")
+        final base = outputDir.toAbsolutePath().normalize()
+        final result = base.resolve(directory).normalize()
+        if( !result.startsWith(base) )
+            throw new AbortOperationException("Config option `prov.directory` cannot refer to a location outside of the workflow output directory -- offending value: ${directory}")
+        return result
+    }
+
+    /**
+     * Resolve the path of a provenance report against the report
+     * directory, or the launch directory if it is not given.
+     *
+     * @param file
+     * @param directory
+     */
+    static Path resolveReportPath(String file, Path directory) {
+        final path = file as Path
+        if( !directory )
+            return path.complete()
+        if( path.isAbsolute() )
+            throw new AbortOperationException("Config option `prov.directory` cannot be used when a report file is an absolute path -- offending value: ${file}")
+        return directory.resolve(file).normalize()
+    }
+
+    /**
      * Get the encodingFormat of a file as MIME Type.
      *
      * @param path Path to file

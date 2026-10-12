@@ -44,8 +44,8 @@ class DagRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
-    DagRenderer(ProvDagConfig config) {
-        path = (config.file as Path).complete()
+    DagRenderer(ProvDagConfig config, Path directory=null) {
+        path = ProvHelper.resolveReportPath(config.file, directory)
         overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)

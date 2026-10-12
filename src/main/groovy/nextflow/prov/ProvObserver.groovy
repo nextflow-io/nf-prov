@@ -61,27 +61,27 @@ class ProvObserver implements TraceObserverV2 {
 
     private Lock lock = new ReentrantLock()
 
-    ProvObserver(ProvFormatsConfig formats, List<String> patterns) {
-        this.renderers = createRenderers(formats)
+    ProvObserver(ProvFormatsConfig formats, List<String> patterns, Path directory=null) {
+        this.renderers = createRenderers(formats, directory)
         this.matchers = patterns.collect( pattern ->
             FileSystems.getDefault().getPathMatcher("glob:**/${pattern}")
         )
     }
 
-    private List<Renderer> createRenderers(ProvFormatsConfig config) {
+    private List<Renderer> createRenderers(ProvFormatsConfig config, Path directory) {
         final List<Renderer> result = []
 
         if( config.bco )
-            result.add(new BcoRenderer(config.bco))
+            result.add(new BcoRenderer(config.bco, directory))
 
         if( config.dag )
-            result.add(new DagRenderer(config.dag))
+            result.add(new DagRenderer(config.dag, directory))
 
         if( config.gexf )
-            result.add(new GexfRenderer(config.gexf))
+            result.add(new GexfRenderer(config.gexf, directory))
 
         if( config.wrroc )
-            result.add(new WrrocRenderer(config.wrroc))
+            result.add(new WrrocRenderer(config.wrroc, directory))
 
         return result
     }
