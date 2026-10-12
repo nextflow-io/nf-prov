@@ -200,6 +200,22 @@ class BcoRendererTest extends Specification {
         render([] as Set).etag != render([] as Set, manifest: [name: 'other']).etag
     }
 
+    def 'should render published files independent of publish order' () {
+        given:
+        final files = ['a.txt', 'b.txt', 'c.txt'].collect { name -> workDir.resolve(name) }
+        final published = files.collectEntries { source -> [source, root.resolve("results/${source.name}")] }
+        final reversed = published.entrySet().toList().reverse().collectEntries { e -> [e.key, e.value] }
+
+        when:
+        final bco1 = render([] as Set, publishedFiles: published)
+        final bco2 = render([] as Set, publishedFiles: reversed)
+
+        then:
+        bco1.io_domain.output_subdomain*.uri*.filename == ['work/a.txt', 'work/b.txt', 'work/c.txt']
+        bco1.io_domain == bco2.io_domain
+        bco1.etag == bco2.etag
+    }
+
     def 'should not overwrite existing file by default' () {
         given:
         bcoFile.text = '{}'
