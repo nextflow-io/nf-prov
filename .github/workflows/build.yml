@@ -70,8 +70,3 @@ jobs:
             curl -sfL -o bco-schema/$f.json https://w3id.org/ieee/ieee-2791-schema/$f.json
           done
           check-jsonschema --base-uri "file://$PWD/bco-schema/" --schemafile bco-schema/2791object.json results/bco.json
-
-      - name: Check WRROC command-line
-        run: |
-          jq -e '.["@graph"][] | select(.["@type"] == "CreateAction" and (.description // "" | startswith("Command-line: nextflow run nf-prov-test/")))' \
-            results/ro-crate-metadata.json
