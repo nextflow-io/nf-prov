@@ -25,6 +25,7 @@ import nextflow.Session
 import nextflow.exception.AbortOperationException
 import nextflow.file.FileHelper
 import nextflow.processor.TaskRun
+import nextflow.script.ScriptType
 import nextflow.script.params.FileOutParam
 
 /**
@@ -84,15 +85,26 @@ class ProvHelper {
     }
 
     /**
+     * Determine whether a task completed successfully. Native (exec)
+     * tasks have no exit status, so they succeed if there is no error.
+     *
+     * @param task
+     */
+    static boolean isSuccess(TaskRun task) {
+        return task.type == ScriptType.GROOVY
+            ? task.error == null
+            : task.isSuccess()
+    }
+
+    /**
      * Get the input files for a task as a mapping from stage name to source path.
      *
      * @param task
      */
     static Map<String,Path> getTaskInputs(TaskRun task) {
-        final entries = task.getInputFiles().stream()
-            .map(holder -> Map.entry(holder.getStageName(), holder.getSourcePath()))
-            .toList() as Map.Entry<String,Path>[]
-        return Map.ofEntries(entries)
+        return task.getInputFiles().collectEntries { holder ->
+            [holder.getStageName(), holder.getSourcePath()]
+        } as Map<String,Path>
     }
 
     /**
@@ -122,6 +134,21 @@ class ProvHelper {
     }
 
     /**
+     * Find the task output that contains a given path, i.e. the path
+     * itself or a parent directory that was produced by a task.
+     *
+     * @param path
+     * @param taskLookup
+     */
+    static Path findTaskOutput(Path path, Map<Path,TaskRun> taskLookup) {
+        for( def p = path; p != null; p = p.getParent() ) {
+            if( taskLookup.containsKey(p) )
+                return p
+        }
+        return null
+    }
+
+    /**
      * Get the list of workflow inputs. A workflow input is an input file
      * to a task that was not produced by another task.
      *
@@ -131,7 +158,7 @@ class ProvHelper {
     static Set<Path> getWorkflowInputs(Set<TaskRun> tasks, Map<Path,TaskRun> taskLookup) {
         return tasks.stream()
             .flatMap(task -> getTaskInputs(task).values().stream())
-            .filter(path -> !taskLookup[path])
+            .filter(path -> !findTaskOutput(path, taskLookup))
             .collect(Collectors.toSet())
     }
 

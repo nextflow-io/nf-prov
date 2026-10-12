@@ -206,19 +206,6 @@ class GexfRenderer implements Renderer {
 
             w.writeEndElement()
         }
-
-        @Override
-        boolean equals(Object obj) {
-            if( this === obj ) return true
-            if( obj === null || !(obj instanceof TaskGexfNode) ) return false
-            final n = (TaskGexfNode)obj
-            return this.task.name == n.task.name
-        }
-
-        @Override
-        int hashCode() {
-            return getLabel().hashCode()
-        }
     }
 
 
@@ -369,12 +356,17 @@ class GexfRenderer implements Renderer {
 
     private static class GexfGraph {
 
-        private final Set<GexfNode> nodes = new HashSet<>()
+        private final Map<GexfNode,GexfNode> nodes = new HashMap<>()
         private final Set<GexfEdge> edges = new HashSet<>()
 
+        /**
+         * Add a node to the graph, or return the existing node
+         * if an equal node was already added.
+         *
+         * @param n
+         */
         GexfNode addNode(GexfNode n) {
-            nodes.add(n)
-            return n
+            return nodes.putIfAbsent(n, n) ?: n
         }
 
         GexfEdge addEdge(GexfNode source, GexfNode target) {
@@ -384,7 +376,7 @@ class GexfRenderer implements Renderer {
         }
 
         void write(Path xmlFile) {
-            setVizSizes(nodes)
+            setVizSizes(nodes.keySet())
 
             Files.newOutputStream(xmlFile).withCloseable { outputStream ->
                 write0(outputStream)
@@ -514,7 +506,7 @@ class GexfRenderer implements Renderer {
             w.writeEndElement() // attributes
 
             w.writeStartElement("nodes")
-            for( final n : nodes ) {
+            for( final n : nodes.keySet() ) {
                 n.write(w)
             }
             w.writeEndElement() // nodes
@@ -542,7 +534,9 @@ class GexfRenderer implements Renderer {
                 .findAll { n -> n instanceof FileGexfNode }
                 .inject([:]) { acc, n ->
                     final fn = (FileGexfNode) n
-                    acc[fn] = fn.getFileSize()
+                    final fileSize = fn.getFileSize()
+                    if( fileSize >= 0L )
+                        acc[fn] = fileSize
                     acc
                 } as Map<FileGexfNode, Long>
 
@@ -556,8 +550,6 @@ class GexfRenderer implements Renderer {
                 return
 
             fileSizes.forEach((fn, fileSize) -> {
-                if( fileSize == -1L )
-                    return
                 fn.vizSize = 10.0 + ((fileSize - minFileSize) / (double)(maxFileSize - minFileSize)) * 90.0
             })
         }

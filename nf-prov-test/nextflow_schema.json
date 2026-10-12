@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "nf-prov-test pipeline parameters",
+  "type": "object",
+  "$defs": {
+    "input_output_options": {
+      "title": "Input/output options",
+      "type": "object",
+      "properties": {
+        "input": {
+          "type": "string",
+          "format": "file-path",
+          "mimetype": "text/csv",
+          "description": "Samplesheet of reads to process."
+        },
+        "outdir": {
+          "type": "string",
+          "format": "directory-path",
+          "description": "Output directory."
+        }
+      }
+    }
+  },
+  "properties": {
+    "constant": {
+      "type": "string",
+      "default": "foo",
+      "description": "Constant value passed to every task."
+    }
+  },
+  "allOf": [
+    { "$ref": "#/$defs/input_output_options" }
+  ]
+}

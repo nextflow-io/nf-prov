@@ -121,7 +121,7 @@ class DagRenderer implements Renderer {
                     return
 
                 inputs[path] = "in${inputs.size()}".toString()
-                lines << "    ${inputs[path]}[\"${path.name}\"]".toString()
+                lines << "    ${inputs[path]}[${label(path.name)}]".toString()
 
                 // add hyperlink if path is remote URL
                 final sourcePath = normalizePath(path)
@@ -133,7 +133,7 @@ class DagRenderer implements Renderer {
         lines << "    end"
 
         // render tasks
-        renderTaskTree(lines, null, taskTree)
+        renderTaskTree(lines, null, taskTree, 0)
 
         // render task inputs
         final taskOutputs = [] as Set<Path>
@@ -143,8 +143,8 @@ class DagRenderer implements Renderer {
                 // render task input from predecessor task
                 final pred = dag.getProducerVertex(path)
                 if( pred != null ) {
-                    lines << "    ${pred.name} -->|${path.name}| ${vertex.name}".toString()
-                    taskOutputs << path
+                    lines << "    ${pred.name} -->|${label(path.name)}| ${vertex.name}".toString()
+                    taskOutputs << ProvHelper.findTaskOutput(path, dag.taskLookup)
                 }
 
                 // render task input from workflow input
@@ -170,8 +170,8 @@ class DagRenderer implements Renderer {
         // render workflow outputs
         lines << "    subgraph \" \""
 
-        outputs.each { path, label ->
-            lines << "    ${label}[${path.name}]".toString()
+        outputs.each { path, id ->
+            lines << "    ${id}[${label(path.name)}]".toString()
         }
 
         lines << "    end"
@@ -236,27 +236,42 @@ class DagRenderer implements Renderer {
     /**
      * Render a tree of tasks and subgraphs.
      *
+     * Subgraphs are numbered because the same subworkflow
+     * name can appear under different parents.
+     *
      * @param lines
      * @param name
      * @param taskTree
+     * @param subgraphCount
      */
-    private void renderTaskTree(List<String> lines, String name, Map<String,Object> taskTree) {
+    private int renderTaskTree(List<String> lines, String name, Map<String,Object> taskTree, int subgraphCount) {
         if( name )
-            lines << "    subgraph ${name}".toString()
+            lines << "    subgraph s${subgraphCount++} [${label(name)}]".toString()
 
         taskTree.each { key, value ->
             if( value instanceof Map )
-                renderTaskTree(lines, key, value)
+                subgraphCount = renderTaskTree(lines, key, value, subgraphCount)
             else if( value instanceof Vertex )
                 lines << "    ${renderTask(value)}".toString()
         }
 
         if( name )
             lines << "    end"
+
+        return subgraphCount
     }
 
     private String renderTask(Vertex vertex) {
-        return "${vertex.name}([\"${vertex.label}\"])"
+        return "${vertex.name}([${label(vertex.label)}])"
+    }
+
+    /**
+     * Quote a label so that it can contain special characters.
+     *
+     * @param text
+     */
+    private static String label(String text) {
+        return '"' + text.replace('"', '#quot;') + '"'
     }
 
     @TupleConstructor
@@ -265,7 +280,7 @@ class DagRenderer implements Renderer {
         Map<Path,TaskRun> taskLookup
 
         Vertex getProducerVertex(Path path) {
-            vertices[taskLookup[path]]
+            vertices[taskLookup[ProvHelper.findTaskOutput(path, taskLookup)]]
         }
     }
 
