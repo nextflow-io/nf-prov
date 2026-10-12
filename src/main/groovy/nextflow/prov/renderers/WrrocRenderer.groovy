@@ -19,7 +19,6 @@ package nextflow.prov.renderers
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -91,12 +90,6 @@ class WrrocRenderer implements Renderer {
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = metadata.nextflow.version.toString()
         final params = session.params
-
-        // get various pipeline_info configurations
-        final reportOpts = session.config.navigate('report', [:]) as Map
-        final timelineOpts = session.config.navigate('timeline', [:]) as Map
-        final dagOpts = session.config.navigate('dag', [:]) as Map
-        final traceOpts = session.config.navigate('trace', [:]) as Map
 
         // parse wrroc configuration
         final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
@@ -216,48 +209,28 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- pipeline_info files
-        if(reportOpts.enabled) {
-            Path relativeReportPath = crateDir.relativize(Paths.get(reportOpts.file.toString()))
-            datasetParts.add([
-                "@id"           : relativeReportPath.toString(),
+        final pipelineInfoFiles = [
+            report  : [description: "Nextflow execution report", encodingFormat: "text/html"],
+            timeline: [description: "Nextflow execution timeline", encodingFormat: "text/html"],
+            dag     : [description: "Nextflow workflow DAG", encodingFormat: null],
+            trace   : [description: "Nextflow execution trace", encodingFormat: "text/tab-separated-values"],
+        ]
+        pipelineInfoFiles.each { scope, info ->
+            final opts = session.config.navigate(scope, [:]) as Map
+            if( !opts.enabled || !opts.file )
+                return
+            final file = (opts.file as Path).complete()
+            if( !file.startsWith(crateDir) ) {
+                log.warn "Excluding ${scope} file ${file} because it is outside of the RO-Crate directory"
+                return
+            }
+            datasetParts.add(withoutNulls([
+                "@id"           : crateDir.relativize(file).toString(),
                 "@type"         : "File",
-                "name"          : relativeReportPath.getFileName().toString(),
-                "description"   : "Nextflow execution report",
-                "encodingFormat": "text/html"
-            ])
-        }
-
-        if(timelineOpts.enabled) {
-            Path relativeTimelinePath = crateDir.relativize(Paths.get(timelineOpts.file.toString()))
-            datasetParts.add([
-                "@id"           : relativeTimelinePath.toString(),
-                "@type"         : "File",
-                "name"          : relativeTimelinePath.getFileName().toString(),
-                "description"   : "Nextflow execution timeline",
-                "encodingFormat": "text/html"
-            ])
-        }
-
-        if(dagOpts.enabled) {
-            Path relativeDagPath = crateDir.relativize(Paths.get(dagOpts.file.toString()))
-            datasetParts.add([
-                "@id"           : relativeDagPath.toString(),
-                "@type"         : "File",
-                "name"          : relativeDagPath.getFileName().toString(),
-                "description"   : "Nextflow execution DAG",
-                "encodingFormat": "text/html"
-            ])
-        }
-
-        if(traceOpts.enabled) {
-            Path relativeTracePath = crateDir.relativize(Paths.get(traceOpts.file.toString()))
-            datasetParts.add([
-                "@id"           : relativeTracePath.toString(),
-                "@type"         : "File",
-                "name"          : relativeTracePath.getFileName().toString(),
-                "description"   : "Nextflow execution DAG",
-                "encodingFormat": "text/plain"
-            ])
+                "name"          : file.name,
+                "description"   : info.description,
+                "encodingFormat": ProvHelper.getEncodingFormat(file) ?: info.encodingFormat
+            ]))
         }
 
         // -- input files
