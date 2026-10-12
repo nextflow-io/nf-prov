@@ -150,6 +150,7 @@ class WrrocRendererTest extends Specification {
             getProjectName() >> 'test'
             getRepository() >> opts.repository
             getCommitId() >> opts.commitId
+            getCommandLine() >> opts.commandLine
             getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline', version: '1.0.0'])
             getStart() >> OffsetDateTime.now()
             getComplete() >> OffsetDateTime.now()
@@ -282,6 +283,20 @@ class WrrocRendererTest extends Specification {
         graph['reports/'].exampleOfWork == ['@id': '#output/reports']
         graph['#output/reports'].additionalType == 'Dataset'
         graph['#00000000-0000-0000-0000-000000000000'].result as Set == [['@id': 'samples.json'], ['@id': 'reports/']] as Set
+    }
+
+    @Unroll
+    def 'should record command line in run description: #commandLine' () {
+        when:
+        final graph = render([] as Set, commandLine: commandLine)
+
+        then:
+        graph['#00000000-0000-0000-0000-000000000000'].description == expected
+
+        where:
+        commandLine                          | expected
+        'nextflow run main.nf -profile test' | 'Command-line: nextflow run main.nf -profile test'
+        null                                 | null
     }
 
     @Unroll
