@@ -163,7 +163,7 @@ class WrrocRendererTest extends Specification {
             getWorkflowMetadata() >> metadata
             getDag() >> (opts.dag ?: new DAG())
             getWorkDir() >> workDir
-            getOutputDir() >> crateDir
+            getOutputDir() >> (opts.containsKey('outputDir') ? opts.outputDir : crateDir)
             getUniqueId() >> UUID.fromString('00000000-0000-0000-0000-000000000000')
         }
     }
@@ -285,6 +285,18 @@ class WrrocRendererTest extends Specification {
         graph['reports/'].exampleOfWork == ['@id': '#output/reports']
         graph['#output/reports'].additionalType == 'Dataset'
         graph['#00000000-0000-0000-0000-000000000000'].result as Set == [['@id': 'samples.json'], ['@id': 'reports/']] as Set
+    }
+
+    def 'should render workflow outputs without an output directory' () {
+        given:
+        final t1 = task(processor('FOO', script(projectDir.resolve('main.nf'), ['FOO'])), 'FOO (1)', outputs: ['foo.txt'])
+        final fooOut = t1.workDir.resolve('foo.txt')
+
+        when:
+        final graph = render([t1] as Set, outputDir: null, workflowOutputs: [foo: fooOut])
+
+        then:
+        graph['#output/foo/value'].value == "work/${t1.hash}/foo.txt"
     }
 
     @Unroll

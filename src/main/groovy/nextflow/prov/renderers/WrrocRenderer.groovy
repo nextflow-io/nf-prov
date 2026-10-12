@@ -952,6 +952,9 @@ class WrrocRenderer implements Renderer {
      * @param session
      */
     private String getWorkflowOutputPath(Path path, Session session) {
+        // output directory is null when running a process or workflow directly
+        if( session.outputDir == null )
+            return normalizePath(path)
         final outputDir = session.outputDir.toAbsolutePath()
         if( path.startsWith(outputDir) )
             return outputDir.relativize(path).toString()
