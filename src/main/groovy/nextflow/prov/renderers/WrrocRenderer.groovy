@@ -88,7 +88,7 @@ class WrrocRenderer implements Renderer {
         final manifest = metadata.manifest
         final scriptFile = metadata.getScriptFile()
 
-        final formatter = DateTimeFormatter.ISO_OFFSET_DATE_TIME
+        final formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssxxx")
         final dateStarted = formatter.format(metadata.start)
         final dateCompleted = formatter.format(metadata.complete)
         final nextflowVersion = metadata.nextflow.version.toString()
@@ -106,13 +106,10 @@ class WrrocRenderer implements Renderer {
         final datasetParts = []
 
         // -- license
-        if( wrrocOpts.license ) {
-            datasetParts.add([
-                "@id"  : wrrocOpts.license,
-                "@type": "CreativeWork"
-            ])
-        }
-        else {
+        final license = wrrocOpts.license
+            ? ["@id": wrrocOpts.license, "@type": "CreativeWork"]
+            : null
+        if( !license ) {
             log.warn "Missing license for Workflow Run RO-Crate -- the resulting crate will be invalid"
         }
 
@@ -128,14 +125,15 @@ class WrrocRenderer implements Renderer {
                 "@type"         : "File",
                 "name"          : fileName,
                 "description"   : "The README file of the workflow.",
-                "encodingFormat": ProvHelper.getEncodingFormat(readmePath) ?: "text/plain"
+                "about"         : ["@id": "./"],
+                "encodingFormat": fileName.toLowerCase().endsWith(".md") ? "text/markdown" : "text/plain"
             ])
             break
         }
 
         // -- main script
         final mainScriptId = metadata.scriptFile.name
-        final softwareApplicationId = "${mainScriptId}#software-application"
+        final softwareApplicationId = "https://github.com/nextflow-io/nextflow/releases/tag/v${nextflowVersion}"
         final organizeActionId = "${mainScriptId}#organize"
         metadata.scriptFile.copyTo(crateDir)
 
@@ -527,15 +525,16 @@ class WrrocRenderer implements Renderer {
                 final task = taskLookup[source]
                 final sourceName = getTaskOutputName(task, source)
 
-                return [
+                return withoutNulls([
                     "@id"         : "#publish/${task.hash}/${sourceName}",
                     "@type"       : "CreateAction",
                     "name"        : "publish",
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
                     "instrument"  : ["@id": softwareApplicationId],
                     "object"      : ["@id": getTaskOutputId(task, sourceName)],
                     "result"      : ["@id": getCrateFileId(target, crateDir)],
                     "actionStatus": "http://schema.org/CompletedActionStatus"
-                ]
+                ])
             }
 
         final formalParameters = inputParameters + outputParameters
@@ -581,7 +580,7 @@ class WrrocRenderer implements Renderer {
                         *asReferences(taskOutputs),
                         *asReferences(publishCreateActions),
                     ],
-                    "license"    : wrrocOpts.license
+                    "license"    : license ? ["@id": license["@id"]] : null
                 ]),
                 [
                     "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
@@ -616,16 +615,14 @@ class WrrocRenderer implements Renderer {
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
                     "creator"            : manifest.author,
                     "codeRepository"     : metadata.repository,
-                    "version"            : metadata.commitId,
+                    "version"            : metadata.commitId ?: manifest.version,
                     "license"            : manifest.license,
                     "url"                : metadata.repository ? normalizePath(metadata.scriptFile) : null,
                     "encodingFormat"     : "application/nextflow",
                     "runtimePlatform"    : "Nextflow " + nextflowVersion,
                     "hasPart"            : asReferences(moduleSoftwareApplications),
-                    "input"              : asReferences(formalParameters),
-                    "output"             : [
-                        // TODO: workflow output targets
-                    ],
+                    "input"              : asReferences(inputParameters),
+                    "output"             : asReferences(outputParameters),
                     "step"               : asReferences(howToSteps),
                 ]),
                 [
@@ -637,9 +634,11 @@ class WrrocRenderer implements Renderer {
                     "version"   : nextflowVersion
                 ],
                 [
-                    "@id"  : softwareApplicationId,
-                    "@type": "SoftwareApplication",
-                    "name" : "Nextflow ${nextflowVersion}"
+                    "@id"            : softwareApplicationId,
+                    "@type"          : "SoftwareApplication",
+                    "name"           : "Nextflow ${nextflowVersion}",
+                    "url"            : "https://www.nextflow.io/",
+                    "softwareVersion": nextflowVersion
                 ],
                 *moduleSoftwareApplications,
                 *toolSoftwareApplications,
@@ -673,6 +672,7 @@ class WrrocRenderer implements Renderer {
                         *asReferences(outputFiles),
                     ]
                 ]),
+                license,
                 agent,
                 organization,
                 *contactPoints,
@@ -689,7 +689,24 @@ class WrrocRenderer implements Renderer {
         ]
 
         // render manifest to JSON file
+        wrroc["@graph"] = (wrroc["@graph"] as List).collect { entity -> compact(entity) }
         path.text = JsonOutput.prettyPrint(JsonOutput.toJson(wrroc))
+    }
+
+    /**
+     * Replace singleton arrays with single values, as recommended
+     * by RO-Crate for compacted JSON-LD.
+     *
+     * @param value
+     */
+    private static Object compact(Object value) {
+        if( value instanceof Map )
+            return value.collectEntries { k, v -> [k, compact(v)] }
+        if( value instanceof List ) {
+            final list = value.collect { v -> compact(v) }
+            return list.size() == 1 ? list.first() : list
+        }
+        return value
     }
 
     private static String getDatePublished() {
@@ -739,6 +756,8 @@ class WrrocRenderer implements Renderer {
         result["@type"] = "Organization"
         if( orgOpts.name )
             result.name = orgOpts.name
+        if( orgOpts.ror )
+            result.url = orgOpts.ror
 
         // Check for contact information
         if( orgOpts.email || orgOpts.phone ) {
