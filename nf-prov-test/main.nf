@@ -65,6 +65,7 @@ workflow {
     exec = ECHO_EXEC.out
     lines = COUNT_LINES.out
     counts = counts_ch
+    samplesheet = channel.fromPath(params.input)
 }
 
 output {
@@ -87,6 +88,10 @@ output {
     }
 
     counts {
+        path '.'
+    }
+
+    samplesheet {
         path '.'
     }
 }

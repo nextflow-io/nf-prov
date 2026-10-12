@@ -549,6 +549,27 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
+        // -- input files published as workflow outputs (i.e. `workflow.output.includeInputs`)
+        publishedFiles
+            .findAll { target, source -> source != null && source !in taskLookup && target.startsWith(crateDir) }
+            .each { target, source ->
+                final inputId = inputEntities[source]?["@id"]
+                    ?: (source in paramInputFiles ? getParamFileId(paramInputFiles[source], source) : null)
+                if( !inputId )
+                    return
+                final targetId = getCrateFileId(target, crateDir)
+                publishCreateActions.add(withoutNulls([
+                    "@id"         : "#publish/input/${targetId}",
+                    "@type"       : "CreateAction",
+                    "name"        : "publish",
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
+                    "instrument"  : ["@id": softwareApplicationId],
+                    "object"      : ["@id": inputId],
+                    "result"      : ["@id": targetId],
+                    "actionStatus": "http://schema.org/CompletedActionStatus"
+                ]))
+            }
+
         final formalParameters = inputParameters + outputParameters
         final propertyValues = inputValues + outputValues
 

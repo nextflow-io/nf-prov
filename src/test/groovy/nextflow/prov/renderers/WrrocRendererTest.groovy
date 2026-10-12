@@ -575,6 +575,26 @@ class WrrocRendererTest extends Specification {
         graph['#process-step/BAZ'].position == 2
     }
 
+    def 'should link published input files to their input entities' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final input = Files.createDirectories(root.resolve('cases')).resolve('samples.csv')
+        input.text = 'id\n1\n'
+        final data = Files.createFile(root.resolve('data.txt'))
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [input, data])
+        final publishedInput = Files.createFile(crateDir.resolve('samples.csv'))
+        final publishedData = Files.createFile(crateDir.resolve('data.txt'))
+
+        when:
+        final graph = render([t] as Set, params: [input: input], publishedFiles: [(publishedInput): input, (publishedData): data])
+
+        then:
+        graph['#publish/input/samples.csv'].object == ['@id': 'input/samples.csv']
+        graph['#publish/input/samples.csv'].result == ['@id': 'samples.csv']
+        graph['#publish/input/data.txt'].object == ['@id': data.toUri().toString()]
+        graph['#publish/input/data.txt'].result == ['@id': 'data.txt']
+    }
+
     def 'should link input file to every param that specifies it' () {
         given:
         final input = Files.createDirectories(root.resolve('cases')).resolve('samples.csv')
