@@ -153,7 +153,7 @@ class WrrocRendererTest extends Specification {
             getNextflow() >> NextflowMeta.instance
         }
         Mock(Session) {
-            getConfig() >> [prov: [formats: [wrroc: wrrocOpts]]]
+            getConfig() >> [prov: [formats: [wrroc: wrrocOpts]]] + (opts.config ?: [:])
             getParams() >> new ScriptBinding.ParamsMap((opts.params ?: [:]) as Map<String,Object>)
             getWorkflowMetadata() >> metadata
             getWorkDir() >> workDir
@@ -363,6 +363,56 @@ class WrrocRendererTest extends Specification {
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])
         !graph.values().any { entity -> entity.name == 'publish' && entity.result == ['@id': '../foo.txt'] }
+    }
+
+    def 'should include pipeline_info files in crate directory' () {
+        given:
+        final infoDir = crateDir.resolve('pipeline_info')
+        final config = [
+            report  : [enabled: true, file: infoDir.resolve('report.html').toString()],
+            timeline: [enabled: true, file: infoDir.resolve('timeline.html').toString()],
+            dag     : [enabled: true, file: infoDir.resolve('dag.dot').toString()],
+            trace   : [enabled: true, file: infoDir.resolve('trace.txt').toString()],
+        ]
+
+        when:
+        final graph = render([] as Set, config: config)
+
+        then:
+        graph['./'].hasPart.containsAll([
+            ['@id': 'pipeline_info/report.html'],
+            ['@id': 'pipeline_info/timeline.html'],
+            ['@id': 'pipeline_info/dag.dot'],
+            ['@id': 'pipeline_info/trace.txt'],
+        ])
+        graph['pipeline_info/report.html'] == [
+            '@id': 'pipeline_info/report.html',
+            '@type': 'File',
+            name: 'report.html',
+            description: 'Nextflow execution report',
+            encodingFormat: 'text/html'
+        ]
+        graph['pipeline_info/timeline.html'].description == 'Nextflow execution timeline'
+        graph['pipeline_info/dag.dot'].description == 'Nextflow workflow DAG'
+        !graph['pipeline_info/dag.dot'].containsKey('encodingFormat')
+        graph['pipeline_info/trace.txt'].description == 'Nextflow execution trace'
+        graph['pipeline_info/trace.txt'].encodingFormat == 'text/tab-separated-values'
+    }
+
+    def 'should exclude pipeline_info files that are disabled, unnamed, or outside of crate directory' () {
+        given:
+        final config = [
+            report  : [enabled: false, file: crateDir.resolve('report.html').toString()],
+            timeline: [enabled: true],
+            dag     : [enabled: true, file: root.resolve('dag.html').toString()],
+            trace   : [enabled: true, file: 'pipeline_info/trace.txt'],
+        ]
+
+        when:
+        final graph = render([] as Set, config: config)
+
+        then:
+        graph['./'].hasPart == [['@id': 'main.nf'], ['@id': 'https://spdx.org/licenses/Apache-2.0'], ['@id': 'nextflow.config']]
     }
 
     def 'should render agent, organization and contact points' () {

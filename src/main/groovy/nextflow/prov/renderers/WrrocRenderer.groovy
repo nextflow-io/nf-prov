@@ -208,6 +208,31 @@ class WrrocRenderer implements Renderer {
                 ] as Map
             }
 
+        // -- pipeline_info files
+        final pipelineInfoFiles = [
+            report  : [description: "Nextflow execution report", encodingFormat: "text/html"],
+            timeline: [description: "Nextflow execution timeline", encodingFormat: "text/html"],
+            dag     : [description: "Nextflow workflow DAG", encodingFormat: null],
+            trace   : [description: "Nextflow execution trace", encodingFormat: "text/tab-separated-values"],
+        ]
+        pipelineInfoFiles.each { scope, info ->
+            final opts = session.config.navigate(scope, [:]) as Map
+            if( !opts.enabled || !opts.file )
+                return
+            final file = (opts.file as Path).complete()
+            if( !file.startsWith(crateDir) ) {
+                log.warn "Excluding ${scope} file ${file} because it is outside of the RO-Crate directory"
+                return
+            }
+            datasetParts.add(withoutNulls([
+                "@id"           : crateDir.relativize(file).toString(),
+                "@type"         : "File",
+                "name"          : file.name,
+                "description"   : info.description,
+                "encodingFormat": ProvHelper.getEncodingFormat(file) ?: info.encodingFormat
+            ]))
+        }
+
         // -- input files
         Map<Path,String> paramInputFiles = [:]
 
