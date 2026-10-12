@@ -144,7 +144,7 @@ class DagRenderer implements Renderer {
                 final pred = dag.getProducerVertex(path)
                 if( pred != null ) {
                     lines << "    ${pred.name} -->|${label(path.name)}| ${vertex.name}".toString()
-                    taskOutputs << path
+                    taskOutputs << ProvHelper.findTaskOutput(path, dag.taskLookup)
                 }
 
                 // render task input from workflow input
@@ -280,7 +280,7 @@ class DagRenderer implements Renderer {
         Map<Path,TaskRun> taskLookup
 
         Vertex getProducerVertex(Path path) {
-            vertices[taskLookup[path]]
+            vertices[taskLookup[ProvHelper.findTaskOutput(path, taskLookup)]]
         }
     }
 

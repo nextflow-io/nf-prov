@@ -435,8 +435,9 @@ class WrrocRenderer implements Renderer {
                 final processDef = processLookup[task.processor]
                 final success = ProvHelper.isSuccess(task)
                 final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
+                    final output = ProvHelper.findTaskOutput(source, taskLookup)
                     final id =
-                        source in taskLookup ? getTaskOutputId(taskLookup[source], source)
+                        output ? getTaskOutputId(taskLookup[output], output)
                         : source in paramInputFiles ? getParamFileId(paramInputFiles[source], source)
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
                         : normalizePath(source)
