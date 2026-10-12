@@ -4,11 +4,6 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
-## [dev]
-
-- Omit optional BCO properties when null
-- Nest script URIs in execution domain
-
 ## [1.7.0] - 2026-01-05
 
 - Add GEXF renderer (#57)
