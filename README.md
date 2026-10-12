@@ -52,6 +52,12 @@ When you run your Nextflow pipeline, the plugin will automatically produce the s
 
 The following options are available:
 
+`prov.directory`
+
+*New in version 1.8.0*
+
+The directory where the provenance reports should be saved. The path is resolved against the workflow output directory (`outputDir`). It must be a relative path within the output directory, and it cannot be used when a report file is an absolute path. By default, it is not used and report files are resolved against the launch directory.
+
 `prov.enabled`
 
 Create the provenance report (default: `true` if plugin is loaded).

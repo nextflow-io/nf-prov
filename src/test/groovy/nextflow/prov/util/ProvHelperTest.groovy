@@ -18,6 +18,7 @@ package nextflow.prov.util
 
 import java.nio.file.Path
 
+import nextflow.exception.AbortOperationException
 import nextflow.processor.TaskRun
 import nextflow.script.ScriptType
 import spock.lang.Specification
@@ -44,6 +45,32 @@ class ProvHelperTest extends Specification {
         ScriptType.SCRIPTLET | Integer.MAX_VALUE | null                  | false
         ScriptType.GROOVY    | Integer.MAX_VALUE | null                  | true
         ScriptType.GROOVY    | Integer.MAX_VALUE | new Exception('boom') | false
+    }
+
+    def 'should resolve report paths against the report directory' () {
+        given:
+        final dir = ProvHelper.resolveReportDirectory('pipeline_info', Path.of('/results'))
+
+        expect:
+        ProvHelper.resolveReportDirectory(null, Path.of('/results')) == null
+        dir == Path.of('/results/pipeline_info')
+        ProvHelper.resolveReportPath('bco.json', dir) == Path.of('/results/pipeline_info/bco.json')
+        ProvHelper.resolveReportPath('bco.json', null) == Path.of('bco.json').toAbsolutePath()
+    }
+
+    @Unroll
+    def 'should reject invalid report directory #directory with file #file' () {
+        when:
+        ProvHelper.resolveReportPath(file, ProvHelper.resolveReportDirectory(directory, Path.of('/results')))
+
+        then:
+        thrown(AbortOperationException)
+
+        where:
+        directory   | file
+        '/tmp'      | 'bco.json'
+        '../other'  | 'bco.json'
+        'info'      | '/tmp/bco.json'
     }
 
     def 'should get output files of a typed task' () {

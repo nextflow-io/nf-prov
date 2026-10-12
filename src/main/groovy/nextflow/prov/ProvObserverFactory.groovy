@@ -19,6 +19,7 @@ package nextflow.prov
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
+import nextflow.prov.util.ProvHelper
 import nextflow.trace.TraceObserverV2
 import nextflow.trace.TraceObserverFactoryV2
 
@@ -48,6 +49,7 @@ class ProvObserverFactory implements TraceObserverFactoryV2 {
             return null
         }
 
-        return new ProvObserver(config.formats, config.patterns)
+        final directory = ProvHelper.resolveReportDirectory(config.directory, session.outputDir)
+        return new ProvObserver(config.formats, config.patterns, directory)
     }
 }

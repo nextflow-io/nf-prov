@@ -53,8 +53,8 @@ class BcoRenderer implements Renderer {
 
     private Path workDir
 
-    BcoRenderer(ProvBcoConfig config) {
-        path = (config.file as Path).complete()
+    BcoRenderer(ProvBcoConfig config, Path directory=null) {
+        path = ProvHelper.resolveReportPath(config.file, directory)
         overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)

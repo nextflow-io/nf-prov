@@ -66,8 +66,8 @@ class GexfRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
-    GexfRenderer(ProvGexfConfig config) {
-        path = (config.file as Path).complete()
+    GexfRenderer(ProvGexfConfig config, Path directory=null) {
+        path = ProvHelper.resolveReportPath(config.file, directory)
         overwrite = config.overwrite
 
         ProvHelper.checkFileOverwrite(path, overwrite)
