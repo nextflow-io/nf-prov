@@ -148,6 +148,8 @@ class WrrocRendererTest extends Specification {
             getWorkDir() >> workDir
             getScriptFile() >> projectDir.resolve('main.nf')
             getProjectName() >> 'test'
+            getRepository() >> opts.repository
+            getCommitId() >> opts.commitId
             getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline', version: '1.0.0'])
             getStart() >> OffsetDateTime.now()
             getComplete() >> OffsetDateTime.now()
@@ -394,6 +396,39 @@ class WrrocRendererTest extends Specification {
         !graph.containsKey('#param/input/value')
         !graph.containsKey('#param/controls/value')
         graph["#task/${t.hash}"].object == ['@id': 'input/samples.csv']
+    }
+
+    def 'should copy local project files into crate' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final input = Files.createDirectories(projectDir.resolve('scripts')).resolve('meshing.py')
+        input.text = 'print(1)'
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [input])
+
+        when:
+        final graph = render([t] as Set)
+
+        then:
+        crateDir.resolve('scripts/meshing.py').text == 'print(1)'
+        graph['scripts/meshing.py']['@type'] == 'File'
+        graph["#task/${t.hash}"].object == ['@id': 'scripts/meshing.py']
+    }
+
+    def 'should reference project files by repository url' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final input = Files.createDirectories(projectDir.resolve('scripts')).resolve('meshing.py')
+        input.text = 'print(1)'
+        final t = task(processor('FOO', owner), 'FOO (1)', inputs: [input])
+        final url = 'https://github.com/nextflow-io/hello/tree/abc123/scripts/meshing.py'
+
+        when:
+        final graph = render([t] as Set, repository: 'https://github.com/nextflow-io/hello', commitId: 'abc123')
+
+        then:
+        !Files.exists(crateDir.resolve('scripts/meshing.py'))
+        graph[url]['@type'] == 'File'
+        graph["#task/${t.hash}"].object == ['@id': url]
     }
 
     def 'should represent remote input files specified by params as file entities' () {
