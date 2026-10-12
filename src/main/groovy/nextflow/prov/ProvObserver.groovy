@@ -56,6 +56,7 @@ class ProvObserver implements TraceObserverV2 {
 
     private Map<String,Path> workflowOutputs
 
+    // map of target to source, since a source can be published to multiple targets
     private Map<Path,Path> publishedFiles = [:]
 
     private Lock lock = new ReentrantLock()
@@ -131,7 +132,7 @@ class ProvObserver implements TraceObserverV2 {
             return
 
         lock.withLock {
-            publishedFiles[event.source] = event.target
+            publishedFiles[event.target] = event.source
         }
     }
 
