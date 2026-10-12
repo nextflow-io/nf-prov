@@ -458,14 +458,41 @@ class WrrocRenderer implements Renderer {
             }
 
         final processSteps = ProvHelper.getProcessSteps(session.dag)
+
+        // -- conda environment files
+        final condaEnvFiles = tasks
+            .collect { task -> getCondaEnvFile(task) }
+            .findAll { envFile -> envFile != null }
+            .unique()
+            .collect { envFile ->
+                if( isLocalProjectFile(envFile) )
+                    copyProjectFile(envFile, crateDir)
+                withoutNulls([
+                    "@id"           : getDataEntityId(envFile, "File"),
+                    "@type"         : "File",
+                    "name"          : envFile.name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(envFile),
+                    "conformsTo"    : envFile.extension in ["yml", "yaml"]
+                        ? ["@id": "https://docs.conda.io/projects/conda/en/latest/user-guide/tasks/manage-environments.html#create-env-file-manually"]
+                        : null
+                ])
+            }
+
         final howToSteps = taskProcessors
             .collect() { process ->
                 final processDef = processLookup[process]
+                final buildInstructions = tasks
+                    .findAll { task -> task.processor == process }
+                    .collect { task -> getCondaEnvFile(task) }
+                    .findAll { envFile -> envFile != null }
+                    .unique()
+                    .collect { envFile -> ["@id": getDataEntityId(envFile, "File")] }
                 withoutNulls([
-                    "@id"        : getProcessStepId(process),
-                    "@type"      : "HowToStep",
-                    "workExample": processDef ? ["@id": getModuleId(processDef)] : null,
-                    "position"   : processSteps[process]
+                    "@id"              : getProcessStepId(process),
+                    "@type"            : "HowToStep",
+                    "workExample"      : processDef ? ["@id": getModuleId(processDef)] : null,
+                    "position"         : processSteps[process],
+                    "buildInstructions": buildInstructions ?: null
                 ])
             }
 
@@ -496,6 +523,12 @@ class WrrocRenderer implements Renderer {
                 ])
             }
 
+        // -- container images
+        final containerImages = tasks
+            .collect { task -> getContainerImage(task) }
+            .findAll { image -> image != null }
+            .unique { image -> image["@id"] }
+
         final taskCreateActions = tasks
             .collect { task ->
                 final processDef = processLookup[task.processor]
@@ -512,15 +545,17 @@ class WrrocRenderer implements Renderer {
                 final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
                     ["@id": getTaskOutputId(task, target)]
                 }
+                final containerImage = getContainerImage(task)
                 final result = withoutNulls([
-                    "@id"         : getTaskId(task),
-                    "@type"       : "CreateAction",
-                    "name"        : task.name,
-                    "instrument"  : processDef ? ["@id": getModuleId(processDef)] : null,
-                    "agent"       : agent ? ["@id": agent["@id"]] : null,
-                    "object"      : inputs,
-                    "result"      : outputs,
-                    "actionStatus": success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
+                    "@id"           : getTaskId(task),
+                    "@type"         : "CreateAction",
+                    "name"          : task.name,
+                    "instrument"    : processDef ? ["@id": getModuleId(processDef)] : null,
+                    "agent"         : agent ? ["@id": agent["@id"]] : null,
+                    "containerImage": containerImage ? ["@id": containerImage["@id"]] : null,
+                    "object"        : inputs,
+                    "result"        : outputs,
+                    "actionStatus"  : success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ])
                 if( !success )
                     result["error"] = task.stderr
@@ -586,8 +621,11 @@ class WrrocRenderer implements Renderer {
         final formalParameters = inputParameters + outputParameters
         final propertyValues = inputValues + outputValues
 
-        final wrroc = [
-            "@context": "https://w3id.org/ro/crate/1.1/context",
+        final Map<String,Object> wrroc = [
+            "@context": [
+                "https://w3id.org/ro/crate/1.1/context",
+                "https://w3id.org/ro/terms/workflow-run/context"
+            ],
             "@graph"  : withoutNulls([
                 [
                     "@id"       : path.name,
@@ -616,7 +654,8 @@ class WrrocRenderer implements Renderer {
                         ["@id": mainScriptId],
                         *asReferences(datasetParts),
                         *asReferences(inputFiles),
-                        *asReferences(outputFiles)
+                        *asReferences(outputFiles),
+                        *asReferences(condaEnvFiles)
                     ]),
                     "mainEntity" : ["@id": mainScriptId],
                     "mentions"   : [
@@ -734,6 +773,8 @@ class WrrocRenderer implements Renderer {
                 *publishCreateActions,
                 *inputFiles,
                 *outputFiles,
+                *condaEnvFiles,
+                *containerImages,
             ])
         ]
 
@@ -1253,6 +1294,60 @@ class WrrocRenderer implements Renderer {
         return Files.exists(metaFile)
             ? new Yaml().load(metaFile.text) as Map
             : null
+    }
+
+    /**
+     * Get the conda environment file of a task, if conda is
+     * enabled and the conda directive specifies one.
+     *
+     * @param task
+     */
+    private static Path getCondaEnvFile(TaskRun task) {
+        if( !task.condaConfig?.isEnabled() )
+            return null
+        final conda = task.config?.get('conda')?.toString()
+        if( !conda || !(conda.endsWith('.yml') || conda.endsWith('.yaml') || conda.endsWith('.txt')) )
+            return null
+        final envFile = (conda as Path).complete()
+        return envFile.isFile() ? envFile : null
+    }
+
+    /**
+     * Get the container image entity of a task.
+     *
+     * Images specified by URL (e.g. Singularity images) are
+     * referenced by URL.
+     *
+     * @param task
+     */
+    private static Map getContainerImage(TaskRun task) {
+        if( !task.isContainerEnabled() || !task.container )
+            return null
+        final container = task.container
+        if( container.startsWith('http://') || container.startsWith('https://') )
+            return ["@id": container, "@type": "ContainerImage"]
+
+        final sif = container.endsWith('.sif') || container.endsWith('.img')
+        final digestIdx = container.indexOf('@sha256:')
+        final ref = digestIdx >= 0 ? container.substring(0, digestIdx) : container
+        final sha256 = digestIdx >= 0 ? container.substring(digestIdx + '@sha256:'.length()) : null
+        final nameWithRegistry = ref.replaceFirst('^docker://', '')
+        final tagIdx = nameWithRegistry.lastIndexOf(':')
+        final hasTag = !sif && tagIdx > nameWithRegistry.lastIndexOf('/')
+        final repo = hasTag ? nameWithRegistry.substring(0, tagIdx) : nameWithRegistry
+        final tag = hasTag ? nameWithRegistry.substring(tagIdx + 1) : null
+        final first = repo.tokenize('/').first()
+        final hasRegistry = repo.contains('/') && (first.contains('.') || first.contains(':') || first == 'localhost')
+
+        return withoutNulls([
+            "@id"           : "#container-image/${container}".toString(),
+            "@type"         : "ContainerImage",
+            "additionalType": ["@id": "https://w3id.org/ro/terms/workflow-run#${sif ? 'SIFImage' : 'DockerImage'}".toString()],
+            "registry"      : sif ? null : hasRegistry ? first : "docker.io",
+            "name"          : sif ? repo : hasRegistry ? repo.substring(first.length() + 1) : repo,
+            "tag"           : tag,
+            "sha256"        : sha256
+        ])
     }
 
     /**

@@ -25,9 +25,11 @@ import com.google.common.hash.HashCode
 import groovy.json.JsonSlurper
 import nextflow.NextflowMeta
 import nextflow.Session
+import nextflow.conda.CondaConfig
 import nextflow.config.Manifest
 import nextflow.dag.DAG
 import nextflow.file.FileHolder
+import nextflow.processor.TaskConfig
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvWrrocConfig
@@ -139,6 +141,10 @@ class WrrocRendererTest extends Specification {
             getType() >> type
             isSuccess() >> (exitStatus == 0)
             getStderr() >> 'oops'
+            getConfig() >> new TaskConfig(opts.conda ? [conda: opts.conda] : [:])
+            getCondaConfig() >> new CondaConfig([enabled: opts.condaEnabled ?: false], [:])
+            isContainerEnabled() >> (opts.container != null)
+            getContainer() >> opts.container
         }
     }
 
@@ -431,6 +437,60 @@ class WrrocRendererTest extends Specification {
         graph[moduleId].hasPart == ['@id': "${moduleId}/fastqc".toString()]
         graph[moduleId].url == modulePath.toUri().toString()
         graph["${moduleId}/fastqc".toString()].description == 'A quality control tool'
+    }
+
+    @Unroll
+    def 'should record container image #container' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', container: container)
+
+        when:
+        final graph = render([t] as Set)
+
+        then:
+        final id = graph["#task/${t.hash}"].containerImage['@id']
+        final image = graph[id]
+        image['@type'] == 'ContainerImage'
+        image.additionalType == (type ? ['@id': "https://w3id.org/ro/terms/workflow-run#${type}".toString()] : null)
+        image.registry == registry
+        image.name == name
+        image.tag == tag
+        image.sha256 == sha256
+
+        where:
+        container                                         | type          | registry         | name                     | tag               | sha256
+        'ubuntu:22.04'                                    | 'DockerImage' | 'docker.io'      | 'ubuntu'                 | '22.04'           | null
+        'quay.io/biocontainers/samtools:1.9--h91753b0_8'  | 'DockerImage' | 'quay.io'        | 'biocontainers/samtools' | '1.9--h91753b0_8' | null
+        'localhost:5000/foo/bar'                          | 'DockerImage' | 'localhost:5000' | 'foo/bar'                | null              | null
+        'docker://ubuntu@sha256:abc123'                   | 'DockerImage' | 'docker.io'      | 'ubuntu'                 | null              | 'abc123'
+        '/images/foo.sif'                                 | 'SIFImage'    | null             | '/images/foo.sif'        | null              | null
+        'https://depot.galaxyproject.org/singularity/foo' | null          | null             | null                     | null              | null
+    }
+
+    def 'should record conda environment files as build instructions' () {
+        given:
+        final modulePath = projectDir.resolve('modules/foo/main.nf')
+        final owner = script(modulePath, ['FOO'])
+        final envFile = modulePath.parent.resolve('environment.yml')
+        envFile.text = 'dependencies:\n  - bioconda::samtools=1.9\n'
+        final foo = processor('FOO', owner)
+        final t1 = task(foo, 'FOO (1)', conda: envFile.toString(), condaEnabled: true)
+        final t2 = task(foo, 'FOO (2)', conda: envFile.toString(), condaEnabled: true)
+        final t3 = task(processor('BAR', owner), 'BAR (1)', conda: 'bioconda::samtools=1.9', condaEnabled: true)
+        final t4 = task(processor('BAZ', owner), 'BAZ (1)', conda: envFile.toString())
+
+        when:
+        final graph = render([t1, t2, t3, t4] as Set)
+
+        then:
+        graph['#process-step/FOO'].buildInstructions == ['@id': 'modules/foo/environment.yml']
+        !graph['#process-step/BAR'].containsKey('buildInstructions')
+        !graph['#process-step/BAZ'].containsKey('buildInstructions')
+        graph['modules/foo/environment.yml'].encodingFormat == 'application/yaml'
+        graph['modules/foo/environment.yml'].conformsTo
+        graph['./'].hasPart.contains(['@id': 'modules/foo/environment.yml'])
+        crateDir.resolve('modules/foo/environment.yml').text == envFile.text
     }
 
     def 'should record failed task' () {
