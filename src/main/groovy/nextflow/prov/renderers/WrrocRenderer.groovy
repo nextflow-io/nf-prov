@@ -282,7 +282,7 @@ class WrrocRenderer implements Renderer {
 
         final inputFiles = workflowInputs
             .findAll { source ->
-                !ProvHelper.isStagedInput(source, session) && !ProvHelper.isTmpInput(source, session)
+                !ProvHelper.isTmpInput(source, session)
             }
             .collect { source ->
                 final paramName = paramInputFiles[source]
@@ -312,6 +312,9 @@ class WrrocRenderer implements Renderer {
                     return
                 // don't try to copy local directories
                 if( !source.isFile() )
+                    return
+                // skip files already added as task inputs
+                if( source in workflowInputs )
                     return
                 inputFiles.add(withoutNulls([
                     "@id"           : source.name,
@@ -396,12 +399,13 @@ class WrrocRenderer implements Renderer {
 
         final processLookup = taskProcessors
             .inject([:] as Map<TaskProcessor,ProcessDef>) { acc, processor ->
-                // HACK: when the owner script of a processor defines only one process, that must be the definition
+                // match by name, or use the only process definition in the owner script (to support aliases)
                 final meta = ScriptMeta.get(processor.getOwnerScript())
                 final defs = meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef } as List<ProcessDef>
-                final processDef = defs.find { it.name == processor.name }
+                final simpleName = processor.name.tokenize(':').last()
+                final processDef = defs.size() == 1 ? defs.first() : defs.find { defn -> defn.name == simpleName }
                 if( !processDef )
-                    log.warn "Could not identify process definition for `${processor.name}` -- resulting RO-Crate may be invalid (hint: define each process in a separate module script to fix this issue)"
+                    log.warn "Could not identify process definition for `${processor.name}` -- resulting RO-Crate may be invalid (hint: define aliased processes in a separate module script to fix this issue)"
                 acc[processor] = processDef
                 acc
             }
@@ -482,19 +486,6 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- workflow execution
-        final stagedInputs = workflowInputs
-            .findAll { source -> ProvHelper.isStagedInput(source, session) }
-            .collect { source ->
-                final name = getStagedInputName(source, session)
-
-                withoutNulls([
-                    "@id"           : "#stage/${name}",
-                    "@type"         : "CreativeWork",
-                    "name"          : name,
-                    "encodingFormat": ProvHelper.getEncodingFormat(source),
-                ])
-            }
-
         final tmpInputs = workflowInputs
             .findAll { source -> ProvHelper.isTmpInput(source, session) }
             .collect { source ->
@@ -509,10 +500,11 @@ class WrrocRenderer implements Renderer {
         final taskCreateActions = tasks
             .collect { task ->
                 final processDef = processLookup[task.processor]
-                final inputs = task.getInputFilesMap().collect { name, source ->
+                final success = ProvHelper.isSuccess(task)
+                final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
-                        : ProvHelper.isStagedInput(source, session) ? "#stage/${getStagedInputName(source, session)}"
+                        : source in paramInputFiles ? source.name
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
                         : normalizePath(source)
                     ["@id": id]
@@ -528,9 +520,9 @@ class WrrocRenderer implements Renderer {
                     "agent"       : agent ? ["@id": agent["@id"]] : null,
                     "object"      : inputs,
                     "result"      : outputs,
-                    "actionStatus": task.exitStatus == 0 ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
+                    "actionStatus": success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
                 ]
-                if( task.exitStatus != 0 )
+                if( !success )
                     result["error"] = task.stderr
                 return result
             }
@@ -549,7 +541,7 @@ class WrrocRenderer implements Renderer {
         }
 
         final publishCreateActions = publishedFiles
-            .findAll { source, target -> source in taskLookup }
+            .findAll { source, target -> source in taskLookup && target.startsWith(crateDir) }
             .collect { source, target ->
                 final task = taskLookup[source]
                 final sourceName = getTaskOutputName(task, source)
@@ -603,7 +595,6 @@ class WrrocRenderer implements Renderer {
                     "mainEntity" : ["@id": mainScriptId],
                     "mentions"   : [
                         ["@id": "#${session.uniqueId}"],
-                        *asReferences(stagedInputs),
                         *asReferences(tmpInputs),
                         *asReferences(taskCreateActions),
                         *asReferences(taskOutputs),
@@ -704,7 +695,6 @@ class WrrocRenderer implements Renderer {
                 *datasetParts,
                 *propertyValues,
                 *controlActions,
-                *stagedInputs,
                 *tmpInputs,
                 *taskCreateActions,
                 *taskOutputs,
@@ -844,6 +834,8 @@ class WrrocRenderer implements Renderer {
                 return value
             case CharSequence:
                 return normalizePath(value.toString())
+            case Path:
+                return normalizePath(value as Path)
             case List:
             case Map:
                 return JsonOutput.toJson(value)
@@ -1008,17 +1000,6 @@ class WrrocRenderer implements Renderer {
 
     private static String getProcessStepId(TaskProcessor process) {
         return "#process-step/${process.name}"
-    }
-
-    /**
-     * Get the relative name of a staged input.
-     *
-     * @param source
-     * @param session
-     */
-    private static String getStagedInputName(Path source, Session session) {
-        final stageDir = ProvHelper.getStageDir(session)
-        return stageDir.relativize(source).toString()
     }
 
     /**

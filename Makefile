@@ -18,4 +18,4 @@ install:
 
 # Publish the plugin
 release:
-	./gradlew releasePlugin
+	./gradlew releasePluginIfNotExists

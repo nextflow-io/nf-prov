@@ -1,2 +1,6 @@
 
+// pluginManagement {
+//     includeBuild '../nextflow-plugin-gradle'
+// }
+
 rootProject.name = 'nf-prov'

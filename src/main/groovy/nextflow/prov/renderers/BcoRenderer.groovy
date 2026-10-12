@@ -112,7 +112,7 @@ class BcoRenderer implements Renderer {
                     "step_number": task.id,
                     "name": task.hash.toString(),
                     "description": task.name,
-                    "input_list": task.getInputFilesMap().collect { name, source -> [
+                    "input_list": ProvHelper.getTaskInputs(task).collect { name, source -> [
                         "uri": normalizePath(source)
                     ] },
                     "output_list": ProvHelper.getTaskOutputs(task).collect { source -> [

@@ -4,6 +4,25 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.7.0] - 2026-01-05
+
+- Add GEXF renderer (#57)
+
+## [1.6.0] - 2025-10-23
+
+- Bump Nextflow 25.10
+- Bump nextflow-gradle-plugin 1.0.0-beta.12
+- Track remote input files (#45)
+- Save WC_SAMPLE output in nf-prov-test as a workflow output (#52)
+
+## [1.5.0] - 2025-09-04
+
+- Use Nextflow Gradle plugin (#42)
+- Declare config options with ConfigScope (#44)
+- Add workflow outputs to WRROC report (#47)
+- Remove legacy provenance format (#48)
+- Use plugin registry (#50)
+
 ## [1.4.0] - 2025-02-06
 
 - Add Workflow Run RO-Crate format (#39)
