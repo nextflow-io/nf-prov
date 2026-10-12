@@ -33,6 +33,7 @@ import nextflow.processor.TaskId
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.prov.ProvBcoConfig
+import nextflow.script.ScriptBinding
 import nextflow.script.WorkflowMetadata
 import nextflow.script.params.FileOutParam
 import spock.lang.Specification
@@ -115,7 +116,8 @@ class BcoRendererTest extends Specification {
             getCommitId() >> opts.commitId
         }
         Mock(Session) {
-            getConfig() >> [params: opts.params ?: [:], prov: [formats: [bco: opts.bco ?: [:]]]]
+            getConfig() >> [prov: [formats: [bco: opts.bco ?: [:]]]]
+            getParams() >> new ScriptBinding.ParamsMap((opts.params ?: [:]) as Map<String,Object>)
             getWorkflowMetadata() >> metadata
             getDag() >> (opts.dag ?: new DAG())
         }
@@ -176,7 +178,7 @@ class BcoRendererTest extends Specification {
         bco.execution_domain.script == [[uri: [uri: "file://${projectDir}/main.nf"]]]
         bco.execution_domain.software_prerequisites[0].version == NextflowMeta.instance.version.toString()
         bco.parametric_domain as Set == [
-            [param: 'input', value: "file://${input}", step: ''],
+            [param: 'input', value: "file://${input}", step: '1'],
             [param: 'opts.n', value: '1', step: '']
         ] as Set
 
@@ -251,6 +253,41 @@ class BcoRendererTest extends Specification {
         then:
         bco.description_domain.pipeline_steps*.description == ['A (1)', 'B (1)', 'B (2)', 'C (1)', 'D (1)']
         bco.description_domain.pipeline_steps*.step_number == [1, 2, 2, 2, 3]
+    }
+
+    def 'should trace file params to the steps that used them' () {
+        given:
+        final (a, b, c) = (1..3).collect { Mock(TaskProcessor) }
+        final reads = root.resolve('reads.fq')
+        final refDir = root.resolve('ref')
+        final genome = refDir.resolve('genome.fa')
+        final tasks = [
+            task('A (1)', process: a, inputs: [reads, genome]),
+            task('B (1)', process: b, inputs: [genome]),
+            task('C (1)', process: c, inputs: [genome]),
+        ] as Set
+        final params = [
+            reads: reads.toString(),
+            genome_dir: refDir.toString(),
+            unused: root.resolve('other.txt').toString(),
+            blank: '',
+            label: 'foo:bar',
+            count: 8,
+        ]
+
+        when:
+        // A -> B, A -> C
+        final bco = render(tasks, dag: dag([[a, b], [a, c]]), params: params)
+
+        then:
+        bco.parametric_domain.collectEntries { p -> [p.param, p.step] } == [
+            reads: '1',
+            genome_dir: '1,2',
+            unused: '',
+            blank: '',
+            label: '',
+            count: '',
+        ]
     }
 
     def 'should handle cycles in the workflow DAG' () {
