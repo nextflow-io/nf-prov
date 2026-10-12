@@ -423,6 +423,12 @@ class WrrocRenderer implements Renderer {
 
                     if( name )
                         result.name = name
+                    result.putAll(withoutNulls([
+                        "description"    : metaYaml.description,
+                        "softwareVersion": metaYaml.version,
+                        "license"        : metaYaml.license,
+                        "keywords"       : metaYaml.keywords,
+                    ]))
                     if( parts )
                         result.hasPart = parts
                 }
