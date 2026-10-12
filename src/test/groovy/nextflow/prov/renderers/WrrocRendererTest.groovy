@@ -244,7 +244,27 @@ class WrrocRendererTest extends Specification {
         and:
         graph["#publish/${t2.hash}/bar.txt"].object == ['@id': "#task/${t2.hash}/bar.txt"]
         graph["#publish/${t2.hash}/bar.txt"].result == ['@id': 'bar.txt']
-        graph['#output/bar/value'].value == 'bar.txt'
+        graph['bar.txt'].exampleOfWork == ['@id': '#output/bar']
+        !graph.containsKey('#output/bar/value')
+        graph['#00000000-0000-0000-0000-000000000000'].result == [['@id': 'bar.txt']]
+    }
+
+    def 'should add workflow outputs that were not published by a task' () {
+        given:
+        final index = crateDir.resolve('samples.json')
+        index.text = '[]'
+        final dir = Files.createDirectories(crateDir.resolve('reports'))
+
+        when:
+        final graph = render([] as Set, workflowOutputs: [samples: index, reports: dir])
+
+        then:
+        graph['samples.json']['@type'] == 'File'
+        graph['samples.json'].exampleOfWork == ['@id': '#output/samples']
+        graph['reports/']['@type'] == 'Dataset'
+        graph['reports/'].exampleOfWork == ['@id': '#output/reports']
+        graph['#output/reports'].additionalType == 'Dataset'
+        graph['#00000000-0000-0000-0000-000000000000'].result as Set == [['@id': 'samples.json'], ['@id': 'reports/']] as Set
     }
 
     @Unroll
@@ -439,6 +459,8 @@ class WrrocRendererTest extends Specification {
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])
         !graph['#output/foo/value'].containsKey('value')
+        graph['#00000000-0000-0000-0000-000000000000'].result == [['@id': '#output/foo/value']]
+        !graph['#00000000-0000-0000-0000-000000000000'].object.contains(['@id': '#output/foo/value'])
         !graph.values().any { entity -> entity.name == 'publish' && entity.result == ['@id': '../foo.txt'] }
     }
 
