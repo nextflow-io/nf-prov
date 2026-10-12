@@ -6,7 +6,7 @@ See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to
 
 ## [dev]
 
-- Omit optional BCO properties when null
+- Fall back to empty BCO license when manifest has none
 - Nest script URIs in execution domain
 
 ## [1.7.0] - 2026-01-05
