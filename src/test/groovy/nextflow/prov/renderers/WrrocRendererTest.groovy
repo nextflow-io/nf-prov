@@ -164,6 +164,9 @@ class WrrocRendererTest extends Specification {
 
     /**
      * Render a crate and return the graph as a map of entities by id.
+     *
+     * Every crate is checked for duplicate ids, dangling references
+     * and null values.
      */
     Map<String,Map> render(Map opts = [:], Set<TaskRun> tasks) {
         final renderer = new WrrocRenderer(new ProvWrrocConfig([file: crateDir.resolve('ro-crate-metadata.json').toString()]))
@@ -176,6 +179,9 @@ class WrrocRendererTest extends Specification {
         final entities = crate['@graph'] as List<Map>
         final graph = entities.collectEntries { entity -> [entity['@id'], entity] }
         assert graph.size() == entities.size() : 'crate contains duplicate ids'
+        final dangling = references(entities).findAll { id -> !id.startsWith('http') && !graph.containsKey(id) }
+        assert dangling.isEmpty() : "crate contains dangling references: ${dangling}"
+        assert nullKeys(graph).isEmpty() : "crate contains null values: ${nullKeys(graph)}"
         return graph
     }
 
@@ -201,11 +207,10 @@ class WrrocRendererTest extends Specification {
 
     // -- tests
 
-    def 'should render a self-consistent crate' () {
+    def 'should render a crate' () {
         given:
-        final owner = script(projectDir.resolve('main.nf'), ['FOO', 'BAR'])
-        final foo = processor('FOO', owner)
-        final bar = processor('BAR', owner)
+        final foo = processor('WF:FOO', script(projectDir.resolve('modules/foo/main.nf'), ['FOO']))
+        final bar = processor('WF:BAR', script(projectDir.resolve('modules/bar/main.nf'), ['FOO']))
         final input = Files.createFile(root.resolve('input.txt'))
         final t1 = task(foo, 'FOO (1)', inputs: [input], outputs: ['foo.txt'])
         final fooOut = t1.workDir.resolve('foo.txt')
@@ -222,22 +227,17 @@ class WrrocRendererTest extends Specification {
             publishedFiles: [(barOut): published])
 
         then:
-        final dangling = references(graph.values() as List).findAll { id -> !id.startsWith('http') && !graph.containsKey(id) }
-        dangling.isEmpty()
-        nullKeys(graph).isEmpty()
-
-        and:
         graph['ro-crate-metadata.json'].about == ['@id': './']
         graph['./'].mainEntity == ['@id': 'main.nf']
         graph['./'].license == 'https://spdx.org/licenses/Apache-2.0'
-        graph['main.nf'].step as Set == [['@id': '#process-step/FOO'], ['@id': '#process-step/BAR']] as Set
+        graph['main.nf'].step as Set == [['@id': '#process-step/WF:FOO'], ['@id': '#process-step/WF:BAR']] as Set
         graph['nextflow.config']
 
         and:
-        graph["#task/${t1.hash}"].instrument == ['@id': '#module/FOO']
+        graph["#task/${t1.hash}"].instrument == ['@id': '#module/modules/foo/main.nf/FOO']
         graph["#task/${t1.hash}"].object == [['@id': input.toUri().toString()]]
         graph["#task/${t1.hash}"].result == [['@id': "#task/${t1.hash}/foo.txt"]]
-        graph["#task/${t2.hash}"].instrument == ['@id': '#module/BAR']
+        graph["#task/${t2.hash}"].instrument == ['@id': '#module/modules/bar/main.nf/FOO']
         graph["#task/${t2.hash}"].object == [['@id': "#task/${t1.hash}/foo.txt"]]
 
         and:
@@ -261,11 +261,11 @@ class WrrocRendererTest extends Specification {
 
         where:
         defs                | processName           | moduleId
-        ['FOO']             | 'FOO'                 | '#module/FOO'
-        ['FOO']             | 'WF:FOO'              | '#module/FOO'
-        ['FOO']             | 'WF:FOO_ALIAS'        | '#module/FOO'
-        ['FOO', 'BAR']      | 'BAR'                 | '#module/BAR'
-        ['FOO', 'BAR']      | 'OUTER:INNER:BAR'     | '#module/BAR'
+        ['FOO']             | 'FOO'                 | '#module/main.nf/FOO'
+        ['FOO']             | 'WF:FOO'              | '#module/main.nf/FOO'
+        ['FOO']             | 'WF:FOO_ALIAS'        | '#module/main.nf/FOO'
+        ['FOO', 'BAR']      | 'BAR'                 | '#module/main.nf/BAR'
+        ['FOO', 'BAR']      | 'OUTER:INNER:BAR'     | '#module/main.nf/BAR'
         ['FOO', 'BAR']      | 'WF:BAR_ALIAS'        | null
     }
 
@@ -285,10 +285,11 @@ class WrrocRendererTest extends Specification {
         final graph = render([t] as Set)
 
         then:
-        graph['#module/FASTQC'].name == 'fastqc'
-        graph['#module/FASTQC'].hasPart == [['@id': '#module/FASTQC/fastqc']]
-        graph['#module/FASTQC'].url == modulePath.toUri().toString()
-        graph['#module/FASTQC/fastqc'].description == 'A quality control tool'
+        final moduleId = '#module/modules/fastqc/main.nf/FASTQC'
+        graph[moduleId].name == 'fastqc'
+        graph[moduleId].hasPart == [['@id': "${moduleId}/fastqc".toString()]]
+        graph[moduleId].url == modulePath.toUri().toString()
+        graph["${moduleId}/fastqc".toString()].description == 'A quality control tool'
     }
 
     def 'should record failed task' () {
@@ -337,18 +338,22 @@ class WrrocRendererTest extends Specification {
     def 'should copy local input files specified by params into crate' () {
         given:
         final owner = script(projectDir.resolve('main.nf'), ['FOO'])
-        final input = root.resolve('samples.csv')
+        final input = Files.createDirectories(root.resolve('cases')).resolve('samples.csv')
         input.text = 'id\n1\n'
+        final controls = Files.createDirectories(root.resolve('controls')).resolve('samples.csv')
+        controls.text = 'id\n2\n'
         final t = task(processor('FOO', owner), 'FOO (1)', inputs: [input])
 
         when:
-        final graph = render([t] as Set, params: [input: input])
+        final graph = render([t] as Set, params: [input: input, controls: controls])
 
         then:
-        Files.exists(crateDir.resolve('samples.csv'))
-        graph['samples.csv']['@type'] == 'File'
+        crateDir.resolve('input/samples.csv').text == 'id\n1\n'
+        crateDir.resolve('controls/samples.csv').text == 'id\n2\n'
+        graph['input/samples.csv']['@type'] == 'File'
+        graph['controls/samples.csv'].description == 'Input file specified by params.controls'
         graph['#param/input'].additionalType == 'File'
-        graph["#task/${t.hash}"].object == [['@id': 'samples.csv']]
+        graph["#task/${t.hash}"].object == [['@id': 'input/samples.csv']]
     }
 
     def 'should exclude published files outside of crate directory' () {
@@ -358,10 +363,11 @@ class WrrocRendererTest extends Specification {
         final outside = Files.createFile(root.resolve('foo.txt'))
 
         when:
-        final graph = render([t] as Set, publishedFiles: [(t.workDir.resolve('foo.txt')): outside])
+        final graph = render([t] as Set, workflowOutputs: [foo: outside], publishedFiles: [(t.workDir.resolve('foo.txt')): outside])
 
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])
+        !graph['#output/foo/value'].containsKey('value')
         !graph.values().any { entity -> entity.name == 'publish' && entity.result == ['@id': '../foo.txt'] }
     }
 
@@ -456,16 +462,21 @@ class WrrocRendererTest extends Specification {
     }
 
     @Unroll
-    def 'should parse parameter schema with #key' () {
+    def 'should parse parameter schema #schema' () {
         given:
         final schemaPath = root.resolve('schema.json')
-        schemaPath.text = """{ "${key}": { "group": { "properties": { "foo": { "type": "string" } } } } }"""
+        schemaPath.text = schema
 
         expect:
-        WrrocRenderer.getParameterSchema(schemaPath) == [foo: [type: 'string']]
+        WrrocRenderer.getParameterSchema(schemaPath) == [foo: [type: 'string'], bar: [type: 'integer']]
 
         where:
-        key << ['$defs', 'defs', 'definitions']
+        schema << [
+            '{ "properties": { "foo": { "type": "string" }, "bar": { "type": "integer" } } }',
+            '{ "properties": { "foo": { "type": "string" } }, "$defs": { "g": { "properties": { "bar": { "type": "integer" } } } } }',
+            '{ "defs": { "g1": { "properties": { "foo": { "type": "string" } } }, "g2": { "properties": { "bar": { "type": "integer" } } } } }',
+            '{ "definitions": { "g1": { "properties": { "foo": { "type": "string" }, "bar": { "type": "integer" } } }, "g2": { "properties": { "bar": { "type": "integer" } } } } }',
+        ]
     }
 
     def 'should normalize parameter values' () {

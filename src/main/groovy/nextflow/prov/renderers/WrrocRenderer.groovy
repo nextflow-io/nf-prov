@@ -60,6 +60,8 @@ class WrrocRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
+    private Path projectDir
+
     // List of contact points (people, organizations) to be added
     private List<Map> contactPoints = []
 
@@ -79,7 +81,7 @@ class WrrocRenderer implements Renderer {
         // get workflow metadata
         final metadata = session.workflowMetadata
         final crateDir = path.getParent()
-        final projectDir = metadata.projectDir
+        this.projectDir = metadata.projectDir
         this.normalizer = new PathNormalizer(metadata)
 
         final manifest = metadata.manifest
@@ -234,45 +236,28 @@ class WrrocRenderer implements Renderer {
             }
             .collect { source ->
                 final paramName = paramInputFiles[source]
-                if( paramName ) {
-                    log.debug "Copying input file specified by `params.${paramName}` into RO-Crate: ${source.toUriString()}"
-                    source.copyTo(crateDir)
-                }
+                if( paramName )
+                    copyParamFile(paramName, source, crateDir)
 
                 withoutNulls([
-                    "@id"           : paramName ? source.name : normalizePath(source),
+                    "@id"           : paramName ? getParamFileId(paramName, source) : normalizePath(source),
                     "@type"         : getType(source),
                     "name"          : source.name,
                     "encodingFormat": ProvHelper.getEncodingFormat(source),
                 ])
             }
 
-        // -- copy local input files specified by params to crate
-        params.each { name, value ->
-            if( !value )
+        // -- copy local input files specified by params that were not used by any task
+        paramInputFiles.each { source, name ->
+            if( source in workflowInputs )
                 return
-            final schema = paramSchema[name] ?: [:]
-            final type = getParameterType(name, value, schema)
-            if( type == "File" ) {
-                final source = (value as Path).complete()
-                // don't try to download remote files
-                if( source.fileSystem != FileSystems.default )
-                    return
-                // don't try to copy local directories
-                if( !source.isFile() )
-                    return
-                // skip files already added as task inputs
-                if( source in workflowInputs )
-                    return
-                inputFiles.add(withoutNulls([
-                    "@id"           : source.name,
-                    "@type"         : type,
-                    "description"   : "Input file specified by params.${name}",
-                    "encodingFormat": ProvHelper.getEncodingFormat(source)
-                ]))
-                log.debug "Copying input file specified by params.${name} into RO-Crate: ${source.toUriString()}"
-                source.copyTo(crateDir)
-            }
+            inputFiles.add(withoutNulls([
+                "@id"           : getParamFileId(name, source),
+                "@type"         : "File",
+                "description"   : "Input file specified by params.${name}",
+                "encodingFormat": ProvHelper.getEncodingFormat(source)
+            ]))
+            copyParamFile(name, source, crateDir)
         }
 
         // -- pipeline outputs
@@ -306,13 +291,13 @@ class WrrocRenderer implements Renderer {
                 final outputId = getWorkflowOutputId(name)
                 final normalized = getWorkflowOutputPath(value, session)
 
-                return [
+                return withoutNulls([
                     "@id"          : "${outputId}/value",
                     "@type"        : "PropertyValue",
                     "exampleOfWork": ["@id": outputId],
                     "name"         : name,
                     "value"        : normalized
-                ] as Map
+                ])
             }
 
         // -- output files
@@ -374,7 +359,7 @@ class WrrocRenderer implements Renderer {
                     final parts = tools.collect { tool ->
                         final entry = (tool as Map).entrySet().first()
                         final toolName = entry.key as String
-                        ["@id": getToolId(process.baseName, toolName)]
+                        ["@id": getToolId(process, toolName)]
                     }
 
                     if( name )
@@ -399,7 +384,7 @@ class WrrocRenderer implements Renderer {
                         final toolName = entry.key as String
                         final toolDescription = (entry.value as Map)?.get('description') as String
                         return [
-                            "@id"         : getToolId(process.baseName, toolName),
+                            "@id"         : getToolId(process, toolName),
                             "@type"       : "SoftwareApplication",
                             "name"        : toolName,
                             "description" : toolDescription
@@ -410,12 +395,12 @@ class WrrocRenderer implements Renderer {
         final howToSteps = taskProcessors
             .collect() { process ->
                 final processDef = processLookup[process]
-                [
+                withoutNulls([
                     "@id"        : getProcessStepId(process),
                     "@type"      : "HowToStep",
                     "workExample": processDef ? ["@id": getModuleId(processDef)] : null,
                     "position"   : process.getId()
-                ]
+                ])
             }
 
         final controlActions = taskProcessors
@@ -452,7 +437,7 @@ class WrrocRenderer implements Renderer {
                 final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
                     final id =
                         source in taskLookup ? getTaskOutputId(taskLookup[source], source)
-                        : source in paramInputFiles ? source.name
+                        : source in paramInputFiles ? getParamFileId(paramInputFiles[source], source)
                         : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
                         : normalizePath(source)
                     ["@id": id]
@@ -460,7 +445,7 @@ class WrrocRenderer implements Renderer {
                 final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
                     ["@id": getTaskOutputId(task, target)]
                 }
-                final result = [
+                final result = withoutNulls([
                     "@id"         : getTaskId(task),
                     "@type"       : "CreateAction",
                     "name"        : task.name,
@@ -469,7 +454,7 @@ class WrrocRenderer implements Renderer {
                     "object"      : inputs,
                     "result"      : outputs,
                     "actionStatus": success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
-                ]
+                ])
                 if( !success )
                     result["error"] = task.stderr
                 return result
@@ -612,7 +597,7 @@ class WrrocRenderer implements Renderer {
                 *toolSoftwareApplications,
                 *formalParameters,
                 *howToSteps,
-                [
+                withoutNulls([
                     "@id"       : organizeActionId,
                     "@type"     : "OrganizeAction",
                     "agent"     : agent ? ["@id": agent["@id"]] : null,
@@ -622,8 +607,8 @@ class WrrocRenderer implements Renderer {
                     "result"    : ["@id": "#${session.uniqueId}"],
                     "startTime" : dateStarted,
                     "endTime"   : dateCompleted
-                ],
-                [
+                ]),
+                withoutNulls([
                     "@id"       : "#${session.uniqueId}",
                     "@type"     : "CreateAction",
                     "agent"     : agent ? ["@id": agent["@id"]] : null,
@@ -636,7 +621,7 @@ class WrrocRenderer implements Renderer {
                         *asReferences(inputFiles),
                     ],
                     "result"    : asReferences(outputFiles)
-                ],
+                ]),
                 agent,
                 organization,
                 *contactPoints,
@@ -805,27 +790,14 @@ class WrrocRenderer implements Renderer {
     private static Map<String,Map> getParameterSchema(Path path) {
         final schema = new JsonSlurper().parseText(path.text) as Map
 
-        Map defs = null
-        if( schema['$defs'] )
-            defs = schema['$defs'] as Map
-        else if( schema['defs'] )
-            defs = schema['defs'] as Map
-        else if( schema['definitions'] )
-            defs = schema['definitions'] as Map
-
-        if( !defs )
-            return [:]
+        final defs = (schema['$defs'] ?: schema['defs'] ?: schema['definitions'] ?: [:]) as Map
 
         final schemaProps = schema.properties as Map ?: [:]
         final defsProps = defs.values().collect { defn ->
             (defn as Map).properties ?: [:]
         } as List<Map>
         final allProps = [schemaProps] + defsProps
-        final entries = allProps.collectMany { props ->
-            (props as Map).entrySet()
-        } as Map.Entry<String,Map>[]
-
-        return Map.ofEntries(entries)
+        return allProps.collectEntries { props -> props } as Map<String,Map>
     }
 
     /**
@@ -909,12 +881,32 @@ class WrrocRenderer implements Renderer {
     }
 
     /**
+     * Get the crate id of an input file specified by a param.
+     *
+     * Files are namespaced by param name to prevent collisions.
+     *
+     * @param name
+     * @param source
+     */
+    private static String getParamFileId(String name, Path source) {
+        return "${name}/${source.name}"
+    }
+
+    private static void copyParamFile(String name, Path source, Path crateDir) {
+        log.debug "Copying input file specified by `params.${name}` into RO-Crate: ${source.toUriString()}"
+        final target = crateDir.resolve(getParamFileId(name, source))
+        Files.createDirectories(target.parent)
+        source.copyTo(target)
+    }
+
+    /**
      * Get the canonical id of a module script.
      *
      * @param process
      */
     private String getModuleId(ProcessDef process) {
-        return "#module/${process.baseName}"
+        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
+        return "#module/${projectDir.relativize(scriptPath)}/${process.baseName}"
     }
 
     /**
@@ -930,11 +922,11 @@ class WrrocRenderer implements Renderer {
     /**
      * Get the canonical id of a tool used by a module.
      *
-     * @param moduleName
+     * @param process
      * @param toolName
      */
-    private static String getToolId(String moduleName, String toolName) {
-        return "#module/${moduleName}/${toolName}"
+    private String getToolId(ProcessDef process, String toolName) {
+        return "${getModuleId(process)}/${toolName}"
     }
 
     /**
