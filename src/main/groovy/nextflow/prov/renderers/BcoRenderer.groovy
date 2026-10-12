@@ -19,6 +19,7 @@ package nextflow.prov.renderers
 import java.nio.file.Path
 import java.time.format.DateTimeFormatter
 
+import groovy.json.JsonGenerator
 import groovy.json.JsonOutput
 import groovy.transform.CompileStatic
 import nextflow.Session
@@ -49,6 +50,8 @@ class BcoRenderer implements Renderer {
     @Delegate
     private PathNormalizer normalizer
 
+    private Path workDir
+
     BcoRenderer(ProvBcoConfig config) {
         path = (config.file as Path).complete()
         overwrite = config.overwrite
@@ -65,6 +68,7 @@ class BcoRenderer implements Renderer {
         // get workflow metadata
         final metadata = session.workflowMetadata
         this.normalizer = new PathNormalizer(metadata)
+        this.workDir = metadata.workDir.normalize()
 
         final manifest = metadata.manifest
         final nextflowMeta = metadata.nextflow
@@ -113,10 +117,10 @@ class BcoRenderer implements Renderer {
                     "name": task.hash.toString(),
                     "description": task.name,
                     "input_list": ProvHelper.getTaskInputs(task).collect { name, source -> [
-                        "uri": normalizePath(source)
+                        "uri": normalizeUri(source)
                     ] },
                     "output_list": ProvHelper.getTaskOutputs(task).collect { source -> [
-                        "uri": normalizePath(source)
+                        "uri": normalizeUri(source)
                     ] }
                 ] },
             ],
@@ -147,7 +151,7 @@ class BcoRenderer implements Renderer {
             "io_domain": [
                 "input_subdomain": workflowInputs.collect { source -> [
                     "uri": [
-                        "uri": normalizePath(source)
+                        "uri": normalizeUri(source)
                     ]
                 ] },
                 "output_subdomain": publishedFiles.collect { source, target -> [
@@ -192,7 +196,22 @@ class BcoRenderer implements Renderer {
         bco.etag = etag.toString()
 
         // render BCO manifest to JSON file
-        path.text = JsonOutput.prettyPrint(JsonOutput.toJson(bco))
+        // omit null fields since the BCO schema does not allow them
+        final json = new JsonGenerator.Options().excludeNulls().build().toJson(bco)
+        path.text = JsonOutput.prettyPrint(json)
+    }
+
+    /**
+     * Normalize a path as an absolute URI, since the BCO schema
+     * does not allow relative work directory paths.
+     *
+     * @param path
+     */
+    private String normalizeUri(Path path) {
+        if( !path.normalize().startsWith(workDir) )
+            return normalizePath(path)
+        final uri = path.toUriString()
+        return uri.startsWith('/') ? 'file://' + uri : uri
     }
 
     private List getContributors(Manifest manifest) {
