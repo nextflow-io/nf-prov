@@ -273,7 +273,7 @@ class BcoRenderer implements Renderer {
     }
 
     private List getContributors(Manifest manifest) {
-        manifest.contributors.collect { c -> [
+        (manifest.contributors ?: []).collect { c -> [
             "name": c.name,
             "affiliation": c.affiliation,
             "email": c.email,
