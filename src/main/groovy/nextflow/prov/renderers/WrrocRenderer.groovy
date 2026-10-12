@@ -63,6 +63,8 @@ class WrrocRenderer implements Renderer {
 
     private Path projectDir
 
+    private String repository
+
     // List of contact points (people, organizations) to be added
     private List<Map> contactPoints = []
 
@@ -83,6 +85,7 @@ class WrrocRenderer implements Renderer {
         final metadata = session.workflowMetadata
         final crateDir = path.getParent()
         this.projectDir = metadata.projectDir
+        this.repository = metadata.repository
         this.normalizer = new PathNormalizer(metadata)
 
         final manifest = metadata.manifest
@@ -239,6 +242,8 @@ class WrrocRenderer implements Renderer {
                 final paramName = paramInputFiles[source]
                 if( paramName )
                     copyParamFile(paramName, source, crateDir)
+                else if( isLocalProjectFile(source) )
+                    copyProjectFile(source, crateDir)
 
                 withoutNulls([
                     "@id"           : paramName ? getParamFileId(paramName, source) : getDataEntityId(source, getType(source)),
@@ -959,6 +964,8 @@ class WrrocRenderer implements Renderer {
      * @param type
      */
     private String getDataEntityId(Path path, String type) {
+        if( type == "File" && isLocalProjectFile(path) )
+            return projectDir.normalize().relativize(path.normalize()).toString()
         final id = normalizePath(path)
         return type == "Dataset" && !id.endsWith("/") ? "${id}/" : id
     }
@@ -1006,6 +1013,26 @@ class WrrocRenderer implements Renderer {
     private static void copyParamFile(String name, Path source, Path crateDir) {
         log.debug "Copying input file specified by `params.${name}` into RO-Crate: ${source.toUriString()}"
         final target = crateDir.resolve(getParamFileId(name, source))
+        Files.createDirectories(target.parent)
+        source.copyTo(target)
+    }
+
+    /**
+     * Determine whether a file is a project asset that can't be
+     * referenced by repository URL, and so must be copied into
+     * the crate.
+     *
+     * @param path
+     */
+    private boolean isLocalProjectFile(Path path) {
+        return !repository && path.normalize().startsWith(projectDir.normalize()) && path.isFile()
+    }
+
+    private void copyProjectFile(Path source, Path crateDir) {
+        final target = crateDir.resolve(getDataEntityId(source, "File"))
+        if( target == source.normalize() )
+            return
+        log.debug "Copying project file into RO-Crate: ${source.toUriString()}"
         Files.createDirectories(target.parent)
         source.copyTo(target)
     }
