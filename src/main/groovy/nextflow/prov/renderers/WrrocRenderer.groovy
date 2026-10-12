@@ -27,6 +27,7 @@ import groovy.json.JsonSlurper
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.Session
+import nextflow.config.Manifest
 import nextflow.file.FilePatternSplitter
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
@@ -570,6 +571,9 @@ class WrrocRenderer implements Renderer {
                 ]))
             }
 
+        // -- workflow authors
+        final creators = getCreators(manifest, agent)
+
         final formalParameters = inputParameters + outputParameters
         final propertyValues = inputValues + outputValues
 
@@ -646,7 +650,7 @@ class WrrocRenderer implements Renderer {
                     "name"               : manifest.name ?: metadata.projectName,
                     "description"        : manifest.description,
                     "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
-                    "creator"            : manifest.author,
+                    "creator"            : creators ? asReferences(creators) : manifest.author,
                     "codeRepository"     : metadata.repository,
                     "version"            : metadata.commitId ?: manifest.version,
                     "license"            : manifest.license,
@@ -709,6 +713,7 @@ class WrrocRenderer implements Renderer {
                 license,
                 agent,
                 organization,
+                *creators.findAll { creator -> creator["@id"] != agent?["@id"] },
                 *contactPoints,
                 *datasetParts,
                 *propertyValues,
@@ -772,6 +777,30 @@ class WrrocRenderer implements Renderer {
         }
 
         return result
+    }
+
+    /**
+     * Get the authors of the workflow from the manifest contributors.
+     *
+     * The agent is reused if it is also an author.
+     *
+     * @param manifest
+     * @param agent
+     */
+    private static List<Map> getCreators(Manifest manifest, Map agent) {
+        return (manifest.contributors ?: [])
+            .findAll { c -> Manifest.ContributionType.AUTHOR in c.contribution }
+            .collect { c ->
+                final id = c.orcid ?: "#${c.name.replaceAll(/\s+/, '_')}"
+                if( id == agent?["@id"] )
+                    return agent
+                withoutNulls([
+                    "@id"  : id,
+                    "@type": "Person",
+                    "name" : c.name,
+                    "email": c.email,
+                ])
+            } as List<Map>
     }
 
     /**

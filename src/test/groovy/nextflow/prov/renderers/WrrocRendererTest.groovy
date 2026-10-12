@@ -152,7 +152,7 @@ class WrrocRendererTest extends Specification {
             getRepository() >> opts.repository
             getCommitId() >> opts.commitId
             getCommandLine() >> opts.commandLine
-            getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline', version: '1.0.0'])
+            getManifest() >> new Manifest([name: 'nf-prov-test', description: 'Test pipeline', version: '1.0.0'] + (opts.manifest ?: [:]))
             getStart() >> OffsetDateTime.now()
             getComplete() >> OffsetDateTime.now()
             getNextflow() >> NextflowMeta.instance
@@ -313,6 +313,26 @@ class WrrocRendererTest extends Specification {
         graph['a.txt'].exampleOfWork == ['@id': '#output/txt']
         graph['b.txt'].exampleOfWork == ['@id': '#output/txt']
         !graph.containsKey('#output/txt/value')
+    }
+
+    def 'should render manifest authors as creators' () {
+        given:
+        final contributors = [
+            [name: 'Alice', orcid: 'https://orcid.org/0000-0000-0000-0001', contribution: ['author']],
+            [name: 'Bob Smith', email: 'bob@example.com', contribution: ['author', 'maintainer']],
+            [name: 'Carol', contribution: ['contributor']],
+        ]
+
+        when:
+        final graph = render([] as Set,
+            wrroc: [agent: [name: 'Alice', orcid: 'https://orcid.org/0000-0000-0000-0001']],
+            manifest: [contributors: contributors])
+
+        then:
+        graph['main.nf'].creator == [['@id': 'https://orcid.org/0000-0000-0000-0001'], ['@id': '#Bob_Smith']]
+        graph['https://orcid.org/0000-0000-0000-0001'].name == 'Alice'
+        graph['#Bob_Smith'] == ['@id': '#Bob_Smith', '@type': 'Person', name: 'Bob Smith', email: 'bob@example.com']
+        !graph.containsKey('#Carol')
     }
 
     @Unroll
