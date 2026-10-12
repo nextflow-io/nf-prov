@@ -56,6 +56,14 @@ class ProvHelperTest extends Specification {
         ProvHelper.getTaskOutputs(task) == [Path.of('/work/ab/a.txt'), Path.of('/work/ab/outdir')]
     }
 
+    def 'should get paths nested in a value' () {
+        expect:
+        ProvHelper.getPaths(Path.of('/a.txt')) == [Path.of('/a.txt')]
+        ProvHelper.getPaths([[id: 'x', fastq: Path.of('/x.fq')], ['y', [Path.of('/y.fq')]]]) == [Path.of('/x.fq'), Path.of('/y.fq')]
+        ProvHelper.getPaths('/a.txt') == []
+        ProvHelper.getPaths(null) == []
+    }
+
     def 'should find task output containing a path' () {
         given:
         def task = Mock(TaskRun)

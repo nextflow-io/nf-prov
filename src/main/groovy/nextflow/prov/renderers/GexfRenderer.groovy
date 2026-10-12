@@ -74,7 +74,7 @@ class GexfRenderer implements Renderer {
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,List<Path>> workflowOutputs, Map<Path,Path> publishedFiles) {
         final mainGraph = new GexfGraph()
 
         for( final task : tasks ) {

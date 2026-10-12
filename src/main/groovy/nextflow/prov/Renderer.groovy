@@ -32,9 +32,9 @@ interface Renderer {
      *
      * @param session
      * @param tasks
-     * @param workflowOutputs map of workflow output name to published path
+     * @param workflowOutputs map of workflow output name to published files (or index file)
      * @param publishedFiles map of published file to source file (null for index files)
      */
-    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles)
+    void render(Session session, Set<TaskRun> tasks, Map<String,List<Path>> workflowOutputs, Map<Path,Path> publishedFiles)
 
 }

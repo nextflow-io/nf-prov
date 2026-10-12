@@ -54,7 +54,7 @@ class ProvObserver implements TraceObserverV2 {
 
     private Set<TaskRun> tasks = []
 
-    private Map<String,Path> workflowOutputs
+    private Map<String,List<Path>> workflowOutputs
 
     // map of target to source, since a source can be published to multiple targets
     private Map<Path,Path> publishedFiles = [:]
@@ -115,14 +115,16 @@ class ProvObserver implements TraceObserverV2 {
         if( workflowOutputs == null )
             workflowOutputs = [:]
 
-        final value = event.value instanceof Path
-            ? event.value as Path
-            : event.index
+        final paths = event.index
+            ? [event.index]
+            : ProvHelper.getPaths(event.value)
 
-        if( !value )
-            log.warn "Workflow output `${event.name}` should either be a single path or declare an index file in order to be included in provenance reports"
+        if( !paths ) {
+            log.warn "Workflow output `${event.name}` does not contain any files and will not be included in provenance reports"
+            return
+        }
 
-        workflowOutputs[event.name] = value
+        workflowOutputs[event.name] = paths
     }
 
     @Override

@@ -179,7 +179,7 @@ class WrrocRendererTest extends Specification {
         renderer.render(
             session(opts),
             tasks,
-            (opts.workflowOutputs ?: [:]) as Map<String,Path>,
+            (opts.workflowOutputs ?: [:]) as Map<String,List<Path>>,
             (opts.publishedFiles ?: [:]) as Map<Path,Path>)
         final crate = new JsonSlurper().parse(crateDir.resolve('ro-crate-metadata.json').toFile()) as Map
         final entities = crate['@graph'] as List<Map>
@@ -230,7 +230,7 @@ class WrrocRendererTest extends Specification {
             [t1, t2] as Set,
             wrroc: [agent: [name: 'Alice', orcid: 'https://orcid.org/0000-0000-0000-0000']],
             params: [input: input.toString()],
-            workflowOutputs: [bar: published],
+            workflowOutputs: [bar: [published]],
             publishedFiles: [(published): barOut])
 
         then:
@@ -276,7 +276,7 @@ class WrrocRendererTest extends Specification {
         final dir = Files.createDirectories(crateDir.resolve('reports'))
 
         when:
-        final graph = render([] as Set, workflowOutputs: [samples: index, reports: dir])
+        final graph = render([] as Set, workflowOutputs: [samples: [index], reports: [dir]])
 
         then:
         graph['samples.json']['@type'] == 'File'
@@ -293,10 +293,26 @@ class WrrocRendererTest extends Specification {
         final fooOut = t1.workDir.resolve('foo.txt')
 
         when:
-        final graph = render([t1] as Set, outputDir: null, workflowOutputs: [foo: fooOut])
+        final graph = render([t1] as Set, outputDir: null, workflowOutputs: [foo: [fooOut]])
 
         then:
         graph['#output/foo/value'].value == "work/${t1.hash}/foo.txt"
+    }
+
+    def 'should link every file of a workflow output' () {
+        given:
+        final a = Files.createFile(crateDir.resolve('a.txt'))
+        final b = Files.createFile(crateDir.resolve('b.txt'))
+
+        when:
+        final graph = render([] as Set, workflowOutputs: [txt: [a, b]])
+
+        then:
+        graph['#output/txt'].additionalType == 'File'
+        !graph['#output/txt'].containsKey('encodingFormat')
+        graph['a.txt'].exampleOfWork == ['@id': '#output/txt']
+        graph['b.txt'].exampleOfWork == ['@id': '#output/txt']
+        !graph.containsKey('#output/txt/value')
     }
 
     @Unroll
@@ -582,7 +598,7 @@ class WrrocRendererTest extends Specification {
         final outside = Files.createFile(root.resolve('foo.txt'))
 
         when:
-        final graph = render([t] as Set, workflowOutputs: [foo: outside], publishedFiles: [(outside): t.workDir.resolve('foo.txt')])
+        final graph = render([t] as Set, workflowOutputs: [foo: [outside]], publishedFiles: [(outside): t.workDir.resolve('foo.txt')])
 
         then:
         !graph['./'].hasPart.contains(['@id': '../foo.txt'])

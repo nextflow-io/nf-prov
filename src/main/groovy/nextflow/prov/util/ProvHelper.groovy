@@ -124,6 +124,22 @@ class ProvHelper {
     }
 
     /**
+     * Get the paths contained in a value, including paths
+     * nested in lists, maps and records.
+     *
+     * @param value
+     */
+    static List<Path> getPaths(Object value) {
+        if( value instanceof Path )
+            return [value]
+        if( value instanceof Map )
+            return value.values().collectMany { v -> getPaths(v) }
+        if( value instanceof Collection )
+            return value.collectMany { v -> getPaths(v) }
+        return []
+    }
+
+    /**
      * Get a mapping of output file to the task that produced it.
      *
      * @param tasks

@@ -76,7 +76,7 @@ class WrrocRenderer implements Renderer {
     }
 
     @Override
-    void render(Session session, Set<TaskRun> tasks, Map<String,Path> workflowOutputs, Map<Path,Path> publishedFiles) {
+    void render(Session session, Set<TaskRun> tasks, Map<String,List<Path>> workflowOutputs, Map<Path,Path> publishedFiles) {
         // get workflow inputs
         final taskLookup = ProvHelper.getTaskLookup(tasks)
         final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
@@ -273,7 +273,7 @@ class WrrocRenderer implements Renderer {
                 inputFiles.add(entity)
         }
 
-        linkExampleOfWork(inputFiles, paramEntityIds)
+        linkExampleOfWork(inputFiles, paramEntityIds.collectEntries { paramId, id -> [paramId, [id]] } as Map<String,List<String>>)
         linkParamDirectoryParts(inputFiles, inputEntities, ProvHelper.getParamPaths(params), paramEntityIds)
 
         // -- input values (file params are represented by their file entities)
@@ -297,11 +297,10 @@ class WrrocRenderer implements Renderer {
             workflowOutputs = [:]
 
         final outputParameters = workflowOutputs
-            .findAll { name, value -> value != null }
-            .collect { name, value ->
-                final type = getParameterType(name, value, null)
-                final encoding = type == "File"
-                    ? ProvHelper.getEncodingFormat(value as Path)
+            .collect { name, paths ->
+                final type = getParameterType(name, paths.first(), null)
+                final encoding = type == "File" && paths.size() == 1
+                    ? ProvHelper.getEncodingFormat(paths.first())
                     : null
 
                 if( !type )
@@ -336,37 +335,41 @@ class WrrocRenderer implements Renderer {
             }
 
         // -- add workflow outputs (e.g. index files) that were not published by a task
-        Map<String,String> outputEntityIds = [:]
+        Map<String,List<String>> outputEntityIds = [:]
 
-        workflowOutputs.each { name, value ->
-            if( value == null || !value.startsWith(crateDir) )
-                return
-            final id = getCrateFileId(value, crateDir)
-            if( !outputFiles.any { f -> f["@id"] == id } ) {
-                outputFiles.add(withoutNulls([
-                    "@id"           : id,
-                    "@type"         : getType(value),
-                    "name"          : value.name,
-                    "encodingFormat": ProvHelper.getEncodingFormat(value),
-                ]))
+        workflowOutputs.each { name, paths ->
+            for( final path : paths ) {
+                if( !path.startsWith(crateDir) )
+                    continue
+                final id = getCrateFileId(path, crateDir)
+                if( !outputFiles.any { f -> f["@id"] == id } ) {
+                    outputFiles.add(withoutNulls([
+                        "@id"           : id,
+                        "@type"         : getType(path),
+                        "name"          : path.name,
+                        "encodingFormat": ProvHelper.getEncodingFormat(path),
+                    ]))
+                }
+                outputEntityIds.computeIfAbsent(getWorkflowOutputId(name), (k) -> []).add(id)
             }
-            outputEntityIds[getWorkflowOutputId(name)] = id
         }
         linkExampleOfWork(outputFiles, outputEntityIds)
 
         // -- output values (outputs in the crate are represented by their file entities)
         final outputValues = workflowOutputs
-            .findAll { name, value -> value != null && !outputEntityIds.containsKey(getWorkflowOutputId(name)) }
-            .collect { name, value ->
+            .findAll { name, paths -> !outputEntityIds.containsKey(getWorkflowOutputId(name)) }
+            .collect { name, paths ->
                 final outputId = getWorkflowOutputId(name)
-                final normalized = getWorkflowOutputPath(value, session)
+                final normalized = paths
+                    .collect { path -> getWorkflowOutputPath(path, session) }
+                    .findAll { v -> v != null }
 
                 return withoutNulls([
                     "@id"          : "${outputId}/value",
                     "@type"        : "PropertyValue",
                     "exampleOfWork": ["@id": outputId],
                     "name"         : name,
-                    "value"        : normalized
+                    "value"        : normalized ?: null
                 ])
             }
 
@@ -994,13 +997,13 @@ class WrrocRenderer implements Renderer {
      * values of.
      *
      * @param entities
-     * @param entityIds map of formal parameter id to entity id
+     * @param entityIds map of formal parameter id to entity ids
      */
-    private static void linkExampleOfWork(List<Map> entities, Map<String,String> entityIds) {
+    private static void linkExampleOfWork(List<Map> entities, Map<String,List<String>> entityIds) {
         for( final entity : entities ) {
             final refs = entityIds
-                .findAll { paramId, id -> id == entity["@id"] }
-                .collect { paramId, id -> ["@id": paramId] }
+                .findAll { paramId, ids -> entity["@id"] in ids }
+                .collect { paramId, ids -> ["@id": paramId] }
             if( refs )
                 entity["exampleOfWork"] = refs.size() == 1 ? refs.first() : refs
         }
