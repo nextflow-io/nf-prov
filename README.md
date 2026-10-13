@@ -83,3 +83,7 @@ See the [nf-prov-test](./nf-prov-test) directory for an example pipeline that pr
 `prov.patterns`
 
 List of file patterns to include in the provenance report, from the set of published files. By default, all published files are included.
+
+## License
+
+This project is licensed under the [Apache License 2.0](./COPYING).
