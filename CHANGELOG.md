@@ -4,6 +4,32 @@ All notable changes to the nf-prov plugin will be documented here.
 
 See [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [1.8.0] - 2026-10-12
+
+- Bump Nextflow 26.10 (#78)
+- Bump nextflow-gradle-plugin 1.0.0-beta.16 (#77)
+- Add `prov.directory` option to save reports in the output directory (#78)
+- Support typed processes, typed params, and workflow outputs without an index file (#78)
+- Link published input files to their input entities in WRROC (#78)
+- Use manifest contributors as WRROC creators (#78)
+- Add workflow diagram and module metadata to WRROC (#78)
+- Fix lost entries for multiple index files and files published to multiple targets (#78)
+- Fix WRROC rendering when the output directory is not set (#78)
+- Align WRROC with BCO for directory params and step positions (#76)
+- Trace BCO file params to the steps that used them (#75)
+- Number BCO pipeline steps by process depth (#73)
+- Make BCO etag more canonical (#72)
+- Fix JSON schema validation errors (#59)
+- Record command line in WRROC CreateAction description (#60)
+- Copy local project files into WRROC crate (#70)
+- Address recommended-level WRROC validator warnings (#69)
+- Represent file params and workflow outputs as data entities in WRROC (#68)
+- Recognize files inside task output directories as task outputs (#67)
+- Validate RO-Crate and BCO reports in CI (#66)
+- Declare WRROC agent, organization, and publisher config options (#64)
+- Include native (exec) tasks in provenance reports (#63)
+- Fix WRROC process lookup (#62)
+
 ## [1.7.0] - 2026-01-05
 
 - Add GEXF renderer (#57)
