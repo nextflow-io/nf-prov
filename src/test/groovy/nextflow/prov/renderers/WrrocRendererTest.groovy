@@ -493,6 +493,81 @@ class WrrocRendererTest extends Specification {
         crateDir.resolve('modules/foo/environment.yml').text == envFile.text
     }
 
+    def 'should record conda packages as software requirements' () {
+        given:
+        final modulePath = projectDir.resolve('modules/foo/main.nf')
+        final owner = script(modulePath, ['FOO', 'BAR', 'BAZ'])
+        final envFile = modulePath.parent.resolve('environment.yml')
+        envFile.text = '''\
+            channels:
+              - conda-forge
+              - bioconda
+            dependencies:
+              - bioconda::samtools=1.9
+              - conda-forge::numpy=1.26.2=py312h1234_0
+              - pip:
+                  - requests==2.31.0
+            '''.stripIndent()
+        final foo = task(processor('FOO', owner), 'FOO (1)', conda: envFile.toString(), condaEnabled: true)
+        final bar = task(processor('BAR', owner), 'BAR (1)', conda: 'bioconda::samtools=1.9', condaEnabled: true)
+        final baz = task(processor('BAZ', owner), 'BAZ (1)', conda: 'bioconda::samtools=1.9')
+
+        when:
+        final graph = render([foo, bar, baz] as Set)
+
+        then:
+        graph['#module/modules/foo/main.nf/FOO'].softwareRequirements == [
+            ['@id': 'pkg:conda/samtools@1.9?channel=bioconda'],
+            ['@id': 'pkg:conda/numpy@1.26.2?build=py312h1234_0&channel=conda-forge']
+        ]
+        !graph['#module/modules/foo/main.nf/FOO'].containsKey('mainEntity')
+        graph['#module/modules/foo/main.nf/BAR'].softwareRequirements == ['@id': 'pkg:conda/samtools@1.9?channel=bioconda']
+        graph['#module/modules/foo/main.nf/BAR'].mainEntity == ['@id': 'pkg:conda/samtools@1.9?channel=bioconda']
+        !graph['#module/modules/foo/main.nf/BAZ'].containsKey('softwareRequirements')
+        graph['pkg:conda/samtools@1.9?channel=bioconda'] == [
+            '@id': 'pkg:conda/samtools@1.9?channel=bioconda',
+            '@type': 'SoftwareApplication',
+            name: 'samtools',
+            version: '1.9',
+            url: 'https://anaconda.org/bioconda/samtools'
+        ]
+    }
+
+    @Unroll
+    def 'should parse conda package spec #spec' () {
+        expect:
+        WrrocRenderer.getCondaPackage(spec)?.get('@id') == purl
+        WrrocRenderer.getCondaPackage(spec)?.get('version') == version
+
+        where:
+        spec                           | purl                                                  | version
+        'samtools'                     | 'pkg:conda/samtools'                                  | null
+        'samtools=1.9'                 | 'pkg:conda/samtools@1.9'                              | '1.9'
+        'samtools==1.9'                | 'pkg:conda/samtools@1.9'                              | '1.9'
+        'bioconda::samtools=1.9'       | 'pkg:conda/samtools@1.9?channel=bioconda'             | '1.9'
+        'bioconda::samtools=1.9=h91_8' | 'pkg:conda/samtools@1.9?build=h91_8&channel=bioconda' | '1.9'
+        'samtools>=1.9'                | 'pkg:conda/samtools'                                  | null
+        'samtools=1.9.*'               | 'pkg:conda/samtools'                                  | null
+        'python=3.10,<3.12'            | 'pkg:conda/python'                                    | null
+        'R-Base=4.3'                   | 'pkg:conda/r-base@4.3'                                | '4.3'
+    }
+
+    @Unroll
+    def 'should ignore conda directive #conda' () {
+        given:
+        final owner = script(projectDir.resolve('main.nf'), ['FOO'])
+        final t = task(processor('FOO', owner), 'FOO (1)', conda: conda, condaEnabled: true)
+
+        when:
+        final graph = render([t] as Set)
+
+        then:
+        !graph['#module/main.nf/FOO'].containsKey('softwareRequirements')
+
+        where:
+        conda << ['/opt/conda/envs/foo', 'missing.yml', 'explicit.txt']
+    }
+
     def 'should record failed task' () {
         given:
         final owner = script(projectDir.resolve('main.nf'), ['FOO'])

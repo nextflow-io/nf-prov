@@ -21,6 +21,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.regex.Pattern
 
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
@@ -402,6 +403,18 @@ class WrrocRenderer implements Renderer {
                 acc
             }
 
+        // -- conda packages
+        final Map<ProcessDef,List<Map>> moduleCondaPackages = [:]
+        for( final task : tasks ) {
+            final processDef = processLookup[task.processor]
+            if( processDef )
+                moduleCondaPackages[processDef] = (moduleCondaPackages[processDef] ?: []) + getCondaPackages(task)
+        }
+
+        final condaPackages = moduleCondaPackages.values()
+            .collectMany { packages -> packages }
+            .unique { pkg -> pkg["@id"] }
+
         final moduleSoftwareApplications = processDefs
             .collect() { process ->
                 final result = [
@@ -410,6 +423,13 @@ class WrrocRenderer implements Renderer {
                     "name"   : process.baseName,
                     "url"    : getModuleUrl(process),
                 ]
+
+                final requirements = asReferences(moduleCondaPackages[process] ?: []).unique()
+                if( requirements )
+                    result.softwareRequirements = requirements
+                // the main tool can only be inferred when there is a single package
+                if( requirements.size() == 1 )
+                    result.mainEntity = requirements.first()
 
                 final metaYaml = getModuleSchema(process)
                 if( metaYaml ) {
@@ -624,7 +644,8 @@ class WrrocRenderer implements Renderer {
         final Map<String,Object> wrroc = [
             "@context": [
                 "https://w3id.org/ro/crate/1.1/context",
-                "https://w3id.org/ro/terms/workflow-run/context"
+                "https://w3id.org/ro/terms/workflow-run/context",
+                ["buildInstructions": "https://codemeta.github.io/terms/buildInstructions"]
             ],
             "@graph"  : withoutNulls([
                 [
@@ -728,6 +749,7 @@ class WrrocRenderer implements Renderer {
                 ],
                 *moduleSoftwareApplications,
                 *toolSoftwareApplications,
+                *condaPackages,
                 *formalParameters,
                 *howToSteps,
                 withoutNulls([
@@ -1303,13 +1325,89 @@ class WrrocRenderer implements Renderer {
      * @param task
      */
     private static Path getCondaEnvFile(TaskRun task) {
-        if( !task.condaConfig?.isEnabled() )
-            return null
-        final conda = task.config?.get('conda')?.toString()
-        if( !conda || !(conda.endsWith('.yml') || conda.endsWith('.yaml') || conda.endsWith('.txt')) )
+        final conda = getConda(task)
+        if( !conda || !isCondaFile(conda) )
             return null
         final envFile = (conda as Path).complete()
         return envFile.isFile() ? envFile : null
+    }
+
+    private static String getConda(TaskRun task) {
+        return task.condaConfig?.isEnabled()
+            ? task.config?.get('conda')?.toString()
+            : null
+    }
+
+    private static boolean isCondaFile(String conda) {
+        return conda.endsWith('.yml') || conda.endsWith('.yaml') || conda.endsWith('.txt')
+    }
+
+    /**
+     * Get the conda packages of a task, from either the
+     * dependencies of a YAML environment file or a list of
+     * package specs in the conda directive.
+     *
+     * Pip dependencies and explicit (.txt) environment files
+     * are not supported.
+     *
+     * @param task
+     */
+    private static List<Map> getCondaPackages(TaskRun task) {
+        final conda = getConda(task)
+        if( !conda )
+            return []
+
+        List specs
+        if( isCondaFile(conda) ) {
+            final envFile = getCondaEnvFile(task)
+            if( !envFile || envFile.extension == 'txt' )
+                return []
+            final env = new Yaml().load(envFile.text) as Map
+            specs = (env?.dependencies ?: []) as List
+        }
+        // paths to existing environments are not package specs
+        else if( conda.contains('/') && !conda.contains('::') )
+            return []
+        else
+            specs = conda.tokenize()
+
+        return specs
+            .findAll { spec -> spec instanceof String }
+            .collect { spec -> getCondaPackage(spec as String) }
+            .findAll { pkg -> pkg != null }
+    }
+
+    // [channel::]name[=version[=build]], where version ranges and wildcards are ignored
+    private static final Pattern CONDA_SPEC = Pattern.compile('^(?:([^:\\s]+)::)?([A-Za-z0-9_.\\-]+)(?:\\s*==?\\s*([^=<>!~,|*\\s]+)(?:=([^=<>!~,|*\\s]+))?(?=$|\\s))?')
+
+    /**
+     * Get the entity of a conda package spec (e.g.
+     * `bioconda::samtools=1.9=h91753b0_8`), identified by its
+     * package URL (purl).
+     *
+     * @param spec
+     */
+    private static Map getCondaPackage(String spec) {
+        final m = CONDA_SPEC.matcher(spec.trim())
+        if( !m.find() )
+            return null
+        final channel = m.group(1)
+        final name = m.group(2).toLowerCase()
+        final version = m.group(3)
+        final build = m.group(4)
+        final qualifiers = [
+            build ? "build=${build}" : null,
+            channel ? "channel=${channel}" : null
+        ].findAll { q -> q != null }
+        final purl = "pkg:conda/${name}${version ? '@' + version : ''}${qualifiers ? '?' + qualifiers.join('&') : ''}".toString()
+
+        return withoutNulls([
+            "@id"    : purl,
+            "@type"  : "SoftwareApplication",
+            "name"   : name,
+            "version": version,
+            "url"    : channel ? "https://anaconda.org/${channel}/${name}".toString() : null
+        ])
     }
 
     /**
