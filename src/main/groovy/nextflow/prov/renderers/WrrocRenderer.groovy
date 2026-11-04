@@ -228,6 +228,9 @@ class WrrocRenderer implements Renderer {
             // reference remote files and local directories by path (without downloading or copying them)
             if( !remote && !source.isDirectory() )
                 return
+            // skip directories that contain the crate (e.g. params.outdir)
+            if( !remote && crateDir.startsWith(source) )
+                return
             final id = getDataEntityId(source, type)
             paramDataEntities.putIfAbsent(id, [
                 "@id"        : id,
