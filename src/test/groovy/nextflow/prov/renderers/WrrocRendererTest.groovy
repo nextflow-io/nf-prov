@@ -584,6 +584,16 @@ class WrrocRendererTest extends Specification {
         graph["#task/${t.hash}"].object == ['@id': id]
     }
 
+    def 'should not represent the crate directory specified by params as a dataset entity' () {
+        when:
+        final graph = render([] as Set, params: [outdir: crateDir, parent: root])
+
+        then:
+        !graph.containsKey(crateDir.toUri().toString())
+        !graph.containsKey(root.toUri().toString())
+        !graph['./'].hasPart.any { ref -> ref['@id'].startsWith('file:') }
+    }
+
     def 'should link directories specified by params to the input files they contain' () {
         given:
         final refs = Files.createDirectories(root.resolve('refs'))
