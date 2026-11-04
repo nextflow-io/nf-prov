@@ -1,0 +1,1282 @@
+/*
+ * Copyright 2023, Seqera Labs
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package nextflow.prov.renderers
+
+import java.nio.file.FileSystems
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
+import groovy.transform.CompileStatic
+import groovy.util.logging.Slf4j
+import nextflow.Session
+import nextflow.config.Manifest
+import nextflow.file.FilePatternSplitter
+import nextflow.processor.TaskProcessor
+import nextflow.processor.TaskRun
+import nextflow.prov.ProvWrrocConfig
+import nextflow.prov.Renderer
+import nextflow.prov.util.ProvHelper
+import nextflow.script.ProcessDef
+import nextflow.script.ScriptMeta
+import nextflow.util.ConfigHelper
+import nextflow.util.Duration
+import nextflow.util.MemoryUnit
+import nextflow.util.PathNormalizer
+import org.yaml.snakeyaml.Yaml
+
+/**
+ * Renderer for the Provenance Run RO Crate format.
+ *
+ * @author Ben Sherman <bentshermann@gmail.com>
+ * @author Felix Bartusch <felix.bartusch@uni-tuebingen.de>
+ * @author Famke Bäuerle <famke.baeuerle@qbic.uni-tuebingen.de>
+ */
+@Slf4j
+@CompileStatic
+class WrrocRenderer implements Renderer {
+
+    private static final List<String> README_FILENAMES = List.of("README.md", "README.txt", "readme.md", "readme.txt", "Readme.md", "Readme.txt", "README")
+
+    private Path path
+
+    private boolean overwrite
+
+    @Delegate
+    private PathNormalizer normalizer
+
+    private Path projectDir
+
+    private String repository
+
+    // List of contact points (people, organizations) to be added
+    private List<Map> contactPoints = []
+
+    WrrocRenderer(ProvWrrocConfig config, Path directory=null) {
+        path = ProvHelper.resolveReportPath(config.file, directory)
+        overwrite = config.overwrite
+
+        ProvHelper.checkFileOverwrite(path, overwrite)
+    }
+
+    @Override
+    void render(Session session, Set<TaskRun> tasks, Map<String,List<Path>> workflowOutputs, Map<Path,Path> publishedFiles) {
+        // get workflow inputs
+        final taskLookup = ProvHelper.getTaskLookup(tasks)
+        final workflowInputs = ProvHelper.getWorkflowInputs(tasks, taskLookup)
+
+        // get workflow metadata
+        final metadata = session.workflowMetadata
+        final crateDir = Files.createDirectories(path.getParent())
+        this.projectDir = metadata.projectDir
+        this.repository = metadata.repository
+        this.normalizer = new PathNormalizer(metadata)
+
+        final manifest = metadata.manifest
+        final scriptFile = metadata.getScriptFile()
+
+        final formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ssxxx")
+        final dateStarted = formatter.format(metadata.start)
+        final dateCompleted = formatter.format(metadata.complete)
+        final nextflowVersion = metadata.nextflow.version.toString()
+        final params = session.params.toPlainMap()
+
+        // parse wrroc configuration
+        final wrrocOpts = session.config.navigate('prov.formats.wrroc', [:]) as Map
+        final agent = getAgentInfo(wrrocOpts)
+        final organization = getOrganizationInfo(wrrocOpts)
+        final publisherId = getPublisherId(wrrocOpts, agent, organization)
+        if( organization )
+            agent["affiliation"] = ["@id": organization["@id"]]
+
+        // create manifest
+        final datasetParts = []
+
+        // -- license
+        final license = wrrocOpts.license
+            ? ["@id": wrrocOpts.license, "@type": "CreativeWork"]
+            : null
+        if( !license ) {
+            log.warn "Missing license for Workflow Run RO-Crate -- the resulting crate will be invalid"
+        }
+
+        // -- readme file
+        for( final fileName : README_FILENAMES ) {
+            final readmePath = projectDir.resolve(fileName)
+            if( !Files.exists(readmePath) )
+                continue
+
+            readmePath.copyTo(crateDir)
+            datasetParts.add([
+                "@id"           : fileName,
+                "@type"         : "File",
+                "name"          : fileName,
+                "description"   : "The README file of the workflow.",
+                "about"         : ["@id": "./"],
+                "encodingFormat": fileName.toLowerCase().endsWith(".md") ? "text/markdown" : "text/plain"
+            ])
+            break
+        }
+
+        // -- workflow diagram
+        final diagramId = getDiagram(manifest.diagram, crateDir, datasetParts)
+
+        // -- main script
+        final mainScriptId = metadata.scriptFile.name
+        final softwareApplicationId = "https://github.com/nextflow-io/nextflow/releases/tag/v${nextflowVersion}"
+        final organizeActionId = "${mainScriptId}#organize"
+        metadata.scriptFile.copyTo(crateDir)
+
+        if( !metadata.repository )
+            log.warn "Could not determine pipeline repository URL for Workflow Run RO-Crate -- launch the pipeline with canonical URL (e.g. `nextflow run nextflow-io/hello`) to ensure that the pipeline repository URL is recorded in the crate"
+
+        // -- parameter schema
+        final schemaPath = scriptFile.getParent().resolve("nextflow_schema.json")
+        Map<String,Map> paramSchema = [:]
+        if( Files.exists(schemaPath) ) {
+            final fileName = schemaPath.name
+
+            schemaPath.copyTo(crateDir)
+            datasetParts.add([
+                "@id"           : fileName,
+                "@type"         : "File",
+                "name"          : fileName,
+                "description"   : "The parameter schema of the workflow.",
+                "encodingFormat": "application/json"
+            ])
+            paramSchema = getParameterSchema(schemaPath)
+        }
+
+        // -- resolved config
+        final configPath = crateDir.resolve("nextflow.config")
+        configPath.text = ConfigHelper.toCanonicalString(session.config, true)
+
+        datasetParts.add([
+            "@id"           : "nextflow.config",
+            "@type"         : "File",
+            "name"          : "Resolved Nextflow configuration",
+            "description"   : "The resolved Nextflow configuration for the workflow run.",
+            "encodingFormat": "text/plain"
+        ])
+
+        // -- pipeline parameters
+        final inputParameters = params
+            .findAll { name, value -> value != null }
+            .collect { name, value ->
+                final schema = paramSchema[name] ?: [:]
+                final type = getParameterType(name, value, schema)
+                final encoding = type == "File"
+                    ? ProvHelper.getEncodingFormat(value as Path)
+                    : null
+
+                if( !type )
+                    log.warn "Could not determine type of parameter `${name}` for Workflow Run RO-Crate -- the resulting crate will be invalid"
+
+                return withoutNulls([
+                    "@id"           : getWorkflowParamId(name),
+                    "@type"         : "FormalParameter",
+                    "additionalType": type,
+                    "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
+                    "encodingFormat": encoding,
+                    "name"          : name,
+                    "defaultValue"  : schema.default,
+                    "description"   : schema.description,
+                ])
+            }
+
+        // -- input files
+        Map<Path,String> paramInputFiles = [:]
+        Map<String,Map> paramDataEntities = [:]
+        Map<String,String> paramEntityIds = [:]
+
+        params.each { name, value ->
+            if( !value )
+                return
+            final schema = paramSchema[name] ?: [:]
+            final type = getParameterType(name, value, schema)
+            if( type != "File" && type != "Dataset" )
+                return
+            if( FilePatternSplitter.isMatchingPattern(value) )
+                return
+            final source = (value as Path).complete()
+            final remote = source.fileSystem != FileSystems.default
+            // copy local files into the crate
+            if( !remote && type == "File" ) {
+                if( !source.isFile() )
+                    return
+                paramInputFiles.putIfAbsent(source, name)
+                paramEntityIds[getWorkflowParamId(name)] = getParamFileId(paramInputFiles[source], source)
+                return
+            }
+            // reference remote files and local directories by path (without downloading or copying them)
+            if( !remote && !source.isDirectory() )
+                return
+            final id = getDataEntityId(source, type)
+            paramDataEntities.putIfAbsent(id, [
+                "@id"        : id,
+                "@type"      : type,
+                "name"       : source.name,
+                "description": "Input ${type == 'Dataset' ? 'directory' : 'file'} specified by params.${name}"
+            ])
+            paramEntityIds[getWorkflowParamId(name)] = id
+        }
+
+        final inputEntities = workflowInputs
+            .findAll { source ->
+                !ProvHelper.isTmpInput(source, session)
+            }
+            .collectEntries { source ->
+                final paramName = paramInputFiles[source]
+                if( paramName )
+                    copyParamFile(paramName, source, crateDir)
+                else if( isLocalProjectFile(source) )
+                    copyProjectFile(source, crateDir)
+
+                [source, withoutNulls([
+                    "@id"           : paramName ? getParamFileId(paramName, source) : getDataEntityId(source, getType(source)),
+                    "@type"         : getType(source),
+                    "name"          : source.name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(source),
+                ])]
+            } as Map<Path,Map>
+        final inputFiles = inputEntities.values().toList()
+
+        // -- copy local input files specified by params that were not used by any task
+        paramInputFiles.each { source, name ->
+            if( source in workflowInputs )
+                return
+            inputFiles.add(withoutNulls([
+                "@id"           : getParamFileId(name, source),
+                "@type"         : "File",
+                "description"   : "Input file specified by params.${name}",
+                "encodingFormat": ProvHelper.getEncodingFormat(source)
+            ]))
+            copyParamFile(name, source, crateDir)
+        }
+
+        // -- add remote files and local directories specified by params that were not used by any task
+        paramDataEntities.each { id, entity ->
+            if( !inputFiles.any { f -> f["@id"] == id } )
+                inputFiles.add(entity)
+        }
+
+        linkExampleOfWork(inputFiles, paramEntityIds.collectEntries { paramId, id -> [paramId, [id]] } as Map<String,List<String>>)
+        linkParamDirectoryParts(inputFiles, inputEntities, ProvHelper.getParamPaths(params), paramEntityIds)
+
+        // -- input values (file params are represented by their file entities)
+        final inputValues = params
+            .findAll { name, value -> value != null && !paramEntityIds.containsKey(getWorkflowParamId(name)) }
+            .collect { name, value ->
+                final paramId = getWorkflowParamId(name)
+                final normalized = normalizeParamValue(value)
+
+                return [
+                    "@id"          : "${paramId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": paramId],
+                    "name"         : name,
+                    "value"        : normalized
+                ] as Map
+            }
+
+        // -- pipeline outputs
+        if( workflowOutputs == null )
+            workflowOutputs = [:]
+
+        final outputParameters = workflowOutputs
+            .collect { name, paths ->
+                final type = getParameterType(name, paths.first(), null)
+                final encoding = type == "File" && paths.size() == 1
+                    ? ProvHelper.getEncodingFormat(paths.first())
+                    : null
+
+                if( !type )
+                    log.warn "Could not determine type of workflow output `${name}` for Workflow Run RO-Crate -- the resulting crate will be invalid"
+
+                return withoutNulls([
+                    "@id"           : getWorkflowOutputId(name),
+                    "@type"         : "FormalParameter",
+                    "additionalType": type,
+                    "conformsTo"    : ["@id": "https://bioschemas.org/profiles/FormalParameter/1.0-RELEASE"],
+                    "encodingFormat": encoding,
+                    "name"          : name,
+                ])
+            }
+
+        // -- output files
+        final outputFiles = publishedFiles
+            .findAll { target, source ->
+                // warn about any output files outside of the crate directory
+                final result = target.startsWith(crateDir)
+                if( !result )
+                    log.warn "Excluding workflow output ${target} because it is outside of the RO-Crate directory -- make sure that the workflow output directory and RO-Crate directory are the same"
+                return result
+            }
+            .collect { target, source ->
+                withoutNulls([
+                    "@id"           : getCrateFileId(target, crateDir),
+                    "@type"         : getType(target),
+                    "name"          : target.name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(target),
+                ])
+            }
+
+        // -- add workflow outputs (e.g. index files) that were not published by a task
+        Map<String,List<String>> outputEntityIds = [:]
+
+        workflowOutputs.each { name, paths ->
+            for( final path : paths ) {
+                if( !path.startsWith(crateDir) )
+                    continue
+                final id = getCrateFileId(path, crateDir)
+                if( !outputFiles.any { f -> f["@id"] == id } ) {
+                    outputFiles.add(withoutNulls([
+                        "@id"           : id,
+                        "@type"         : getType(path),
+                        "name"          : path.name,
+                        "encodingFormat": ProvHelper.getEncodingFormat(path),
+                    ]))
+                }
+                outputEntityIds.computeIfAbsent(getWorkflowOutputId(name), (k) -> []).add(id)
+            }
+        }
+        linkExampleOfWork(outputFiles, outputEntityIds)
+
+        // -- output values (outputs in the crate are represented by their file entities)
+        final outputValues = workflowOutputs
+            .findAll { name, paths -> !outputEntityIds.containsKey(getWorkflowOutputId(name)) }
+            .collect { name, paths ->
+                final outputId = getWorkflowOutputId(name)
+                final normalized = paths
+                    .collect { path -> getWorkflowOutputPath(path, session) }
+                    .findAll { v -> v != null }
+
+                return withoutNulls([
+                    "@id"          : "${outputId}/value",
+                    "@type"        : "PropertyValue",
+                    "exampleOfWork": ["@id": outputId],
+                    "name"         : name,
+                    "value"        : normalized ?: null
+                ])
+            }
+
+        // -- workflow definition
+        final taskProcessors = tasks
+            .collect { task -> task.processor }
+            .unique()
+
+        final processDefs = taskProcessors
+            .collect { process -> ScriptMeta.get(process.getOwnerScript()) }
+            .unique()
+            .collectMany { meta ->
+                meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef } as List<ProcessDef>
+            }
+
+        final processLookup = taskProcessors
+            .inject([:] as Map<TaskProcessor,ProcessDef>) { acc, processor ->
+                // match by name, or use the only process definition in the owner script (to support aliases)
+                final meta = ScriptMeta.get(processor.getOwnerScript())
+                final defs = meta.getDefinitions().findAll { defn -> defn instanceof ProcessDef } as List<ProcessDef>
+                final simpleName = processor.name.tokenize(':').last()
+                final processDef = defs.size() == 1 ? defs.first() : defs.find { defn -> defn.name == simpleName }
+                if( !processDef )
+                    log.warn "Could not identify process definition for `${processor.name}` -- resulting RO-Crate may be invalid (hint: define aliased processes in a separate module script to fix this issue)"
+                acc[processor] = processDef
+                acc
+            }
+
+        final moduleSoftwareApplications = processDefs
+            .collect() { process ->
+                final result = [
+                    "@id"    : getModuleId(process),
+                    "@type"  : "SoftwareApplication",
+                    "name"   : process.baseName,
+                    "url"    : getModuleUrl(process),
+                ]
+
+                final metaYaml = getModuleSchema(process)
+                if( metaYaml ) {
+                    final name = metaYaml.name as String
+                    final tools = metaYaml.getOrDefault('tools', []) as List
+                    final parts = tools.collect { tool ->
+                        final entry = (tool as Map).entrySet().first()
+                        final toolName = entry.key as String
+                        ["@id": getToolId(process, toolName)]
+                    }
+
+                    if( name )
+                        result.name = name
+                    result.putAll(withoutNulls([
+                        "description"    : metaYaml.description,
+                        "softwareVersion": metaYaml.version,
+                        "license"        : metaYaml.license,
+                        "keywords"       : metaYaml.keywords,
+                    ]))
+                    if( parts )
+                        result.hasPart = parts
+                }
+
+                return result
+            }
+
+        final toolSoftwareApplications = processDefs
+            .collectMany { process ->
+                final metaYaml = getModuleSchema(process)
+                if( !metaYaml )
+                    return []
+
+                final tools = metaYaml.getOrDefault('tools', []) as List
+                return tools
+                    .collect { tool ->
+                        final entry = (tool as Map).entrySet().first()
+                        final toolName = entry.key as String
+                        final toolDescription = (entry.value as Map)?.get('description') as String
+                        return [
+                            "@id"         : getToolId(process, toolName),
+                            "@type"       : "SoftwareApplication",
+                            "name"        : toolName,
+                            "description" : toolDescription
+                        ]
+                    }
+            }
+
+        final processSteps = ProvHelper.getProcessSteps(session.dag)
+        final howToSteps = taskProcessors
+            .collect() { process ->
+                final processDef = processLookup[process]
+                withoutNulls([
+                    "@id"        : getProcessStepId(process),
+                    "@type"      : "HowToStep",
+                    "workExample": processDef ? ["@id": getModuleId(processDef)] : null,
+                    "position"   : processSteps[process]
+                ])
+            }
+
+        final controlActions = taskProcessors
+            .collect() { process ->
+                final taskIds = tasks
+                    .findAll { task -> task.processor == process }
+                    .collect { task -> ["@id": getTaskId(task)] }
+
+                return [
+                    "@id"       : getProcessControlId(process),
+                    "@type"     : "ControlAction",
+                    "instrument": ["@id": getProcessStepId(process)],
+                    "name"      : "Orchestrate process ${process.name}",
+                    "object"    : taskIds
+                ]
+            }
+
+        // -- workflow execution
+        final tmpInputs = workflowInputs
+            .findAll { source -> ProvHelper.isTmpInput(source, session) }
+            .collect { source ->
+                withoutNulls([
+                    "@id"           : "#tmp/${source.name}",
+                    "@type"         : "CreativeWork",
+                    "name"          : source.name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(source),
+                ])
+            }
+
+        final taskCreateActions = tasks
+            .collect { task ->
+                final processDef = processLookup[task.processor]
+                final success = ProvHelper.isSuccess(task)
+                final inputs = ProvHelper.getTaskInputs(task).collect { name, source ->
+                    final output = ProvHelper.findTaskOutput(source, taskLookup)
+                    final id =
+                        output ? getTaskOutputId(taskLookup[output], output)
+                        : source in paramInputFiles ? getParamFileId(paramInputFiles[source], source)
+                        : ProvHelper.isTmpInput(source, session) ? "#tmp/${source.name}"
+                        : getDataEntityId(source, getType(source))
+                    ["@id": id]
+                }
+                final outputs = ProvHelper.getTaskOutputs(task).collect { target ->
+                    ["@id": getTaskOutputId(task, target)]
+                }
+                final result = withoutNulls([
+                    "@id"         : getTaskId(task),
+                    "@type"       : "CreateAction",
+                    "name"        : task.name,
+                    "instrument"  : processDef ? ["@id": getModuleId(processDef)] : null,
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
+                    "object"      : inputs,
+                    "result"      : outputs,
+                    "actionStatus": success ? "http://schema.org/CompletedActionStatus" : "http://schema.org/FailedActionStatus"
+                ])
+                if( !success )
+                    result["error"] = task.stderr
+                return result
+            }
+
+        final taskOutputs = tasks.collectMany { task ->
+            ProvHelper.getTaskOutputs(task).collect { target ->
+                final name = getTaskOutputName(task, target)
+
+                return withoutNulls([
+                    "@id"           : getTaskOutputId(task, name),
+                    "@type"         : "CreativeWork",
+                    "name"          : name,
+                    "encodingFormat": ProvHelper.getEncodingFormat(target),
+                ])
+            }
+        }
+
+        final publishCreateActions = publishedFiles
+            .findAll { target, source -> source in taskLookup && target.startsWith(crateDir) }
+            .groupBy { target, source -> source }
+            .collect { source, targets ->
+                final task = taskLookup[source as Path]
+                final sourceName = getTaskOutputName(task, source as Path)
+
+                return withoutNulls([
+                    "@id"         : "#publish/${task.hash}/${sourceName}",
+                    "@type"       : "CreateAction",
+                    "name"        : "publish",
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
+                    "instrument"  : ["@id": softwareApplicationId],
+                    "object"      : ["@id": getTaskOutputId(task, sourceName)],
+                    "result"      : targets.keySet().collect { target -> ["@id": getCrateFileId(target as Path, crateDir)] },
+                    "actionStatus": "http://schema.org/CompletedActionStatus"
+                ])
+            }
+
+        // -- input files published as workflow outputs (i.e. `workflow.output.includeInputs`)
+        publishedFiles
+            .findAll { target, source -> source != null && source !in taskLookup && target.startsWith(crateDir) }
+            .each { target, source ->
+                final inputId = inputEntities[source]?["@id"]
+                    ?: (source in paramInputFiles ? getParamFileId(paramInputFiles[source], source) : null)
+                if( !inputId )
+                    return
+                final targetId = getCrateFileId(target, crateDir)
+                publishCreateActions.add(withoutNulls([
+                    "@id"         : "#publish/input/${targetId}",
+                    "@type"       : "CreateAction",
+                    "name"        : "publish",
+                    "agent"       : agent ? ["@id": agent["@id"]] : null,
+                    "instrument"  : ["@id": softwareApplicationId],
+                    "object"      : ["@id": inputId],
+                    "result"      : ["@id": targetId],
+                    "actionStatus": "http://schema.org/CompletedActionStatus"
+                ]))
+            }
+
+        // -- workflow authors
+        final creators = getCreators(manifest, agent)
+
+        final formalParameters = inputParameters + outputParameters
+        final propertyValues = inputValues + outputValues
+
+        final wrroc = [
+            "@context": "https://w3id.org/ro/crate/1.1/context",
+            "@graph"  : withoutNulls([
+                [
+                    "@id"       : path.name,
+                    "@type"     : "CreativeWork",
+                    "about"     : ["@id": "./"],
+                    "conformsTo": [
+                        ["@id": "https://w3id.org/ro/crate/1.1"],
+                        ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
+                    ]
+                ],
+                withoutNulls([
+                    "@id"        : "./",
+                    "@type"      : "Dataset",
+                    "author"     : agent ? ["@id": agent["@id"]] : null,
+                    "publisher"  : publisherId ? ["@id": publisherId] : null,
+                    "datePublished": getDatePublished(),
+                    "conformsTo" : [
+                        ["@id": "https://w3id.org/ro/wfrun/process/0.1"],
+                        ["@id": "https://w3id.org/ro/wfrun/workflow/0.1"],
+                        ["@id": "https://w3id.org/ro/wfrun/provenance/0.1"],
+                        ["@id": "https://w3id.org/workflowhub/workflow-ro-crate/1.0"]
+                    ],
+                    "name"       : "Workflow run of ${manifest.name ?: metadata.projectName}",
+                    "description": manifest.description ?: null,
+                    "hasPart"    : withoutNulls([
+                        ["@id": mainScriptId],
+                        *asReferences(datasetParts),
+                        *asReferences(inputFiles),
+                        *asReferences(outputFiles)
+                    ]),
+                    "mainEntity" : ["@id": mainScriptId],
+                    "mentions"   : [
+                        ["@id": "#${session.uniqueId}"],
+                        *asReferences(tmpInputs),
+                        *asReferences(taskCreateActions),
+                        *asReferences(taskOutputs),
+                        *asReferences(publishCreateActions),
+                    ],
+                    "license"    : license ? ["@id": license["@id"]] : null
+                ]),
+                [
+                    "@id"    : "https://w3id.org/ro/wfrun/process/0.1",
+                    "@type"  : "CreativeWork",
+                    "name"   : "Process Run Crate",
+                    "version": "0.1"
+                ],
+                [
+                    "@id"    : "https://w3id.org/ro/wfrun/workflow/0.1",
+                    "@type"  : "CreativeWork",
+                    "name"   : "Workflow Run Crate",
+                    "version": "0.1"
+                ],
+                [
+                    "@id"    : "https://w3id.org/ro/wfrun/provenance/0.1",
+                    "@type"  : "CreativeWork",
+                    "name"   : "Provenance Run Crate",
+                    "version": "0.1"
+                ],
+                [
+                    "@id"    : "https://w3id.org/workflowhub/workflow-ro-crate/1.0",
+                    "@type"  : "CreativeWork",
+                    "name"   : "Workflow RO-Crate",
+                    "version": "1.0"
+                ],
+                withoutNulls([
+                    "@id"                : mainScriptId,
+                    "@type"              : ["File", "SoftwareSourceCode", "ComputationalWorkflow", "HowTo"],
+                    "conformsTo"         : ["@id": "https://bioschemas.org/profiles/ComputationalWorkflow/1.0-RELEASE"],
+                    "name"               : manifest.name ?: metadata.projectName,
+                    "description"        : manifest.description,
+                    "programmingLanguage": ["@id": "https://w3id.org/workflowhub/workflow-ro-crate#nextflow"],
+                    "creator"            : creators ? asReferences(creators) : manifest.author,
+                    "codeRepository"     : metadata.repository,
+                    "version"            : metadata.commitId ?: manifest.version,
+                    "license"            : manifest.license,
+                    "url"                : metadata.repository ? normalizePath(metadata.scriptFile) : null,
+                    "encodingFormat"     : "application/nextflow",
+                    "runtimePlatform"    : "Nextflow " + nextflowVersion,
+                    "image"              : diagramId ? ["@id": diagramId] : null,
+                    "hasPart"            : asReferences(moduleSoftwareApplications),
+                    "input"              : asReferences(inputParameters),
+                    "output"             : asReferences(outputParameters),
+                    "step"               : asReferences(howToSteps),
+                ]),
+                [
+                    "@id"       : "https://w3id.org/workflowhub/workflow-ro-crate#nextflow",
+                    "@type"     : "ComputerLanguage",
+                    "name"      : "Nextflow",
+                    "identifier": "https://www.nextflow.io/",
+                    "url"       : "https://www.nextflow.io/",
+                    "version"   : nextflowVersion
+                ],
+                [
+                    "@id"            : softwareApplicationId,
+                    "@type"          : "SoftwareApplication",
+                    "name"           : "Nextflow ${nextflowVersion}",
+                    "url"            : "https://www.nextflow.io/",
+                    "softwareVersion": nextflowVersion
+                ],
+                *moduleSoftwareApplications,
+                *toolSoftwareApplications,
+                *formalParameters,
+                *howToSteps,
+                withoutNulls([
+                    "@id"       : organizeActionId,
+                    "@type"     : "OrganizeAction",
+                    "agent"     : agent ? ["@id": agent["@id"]] : null,
+                    "instrument": ["@id": softwareApplicationId],
+                    "name"      : "Run of Nextflow ${nextflowVersion}",
+                    "object"    : asReferences(controlActions),
+                    "result"    : ["@id": "#${session.uniqueId}"],
+                    "startTime" : dateStarted,
+                    "endTime"   : dateCompleted
+                ]),
+                withoutNulls([
+                    "@id"       : "#${session.uniqueId}",
+                    "@type"     : "CreateAction",
+                    "agent"     : agent ? ["@id": agent["@id"]] : null,
+                    "name"      : "Nextflow workflow run ${session.uniqueId}",
+                    "description": metadata.commandLine ? "Command-line: ${metadata.commandLine}" : null,
+                    "startTime" : dateStarted,
+                    "endTime"   : dateCompleted,
+                    "instrument": ["@id": mainScriptId],
+                    "object"    : [
+                        *asReferences(inputValues),
+                        *asReferences(inputFiles),
+                    ],
+                    "result"    : [
+                        *asReferences(outputValues),
+                        *asReferences(outputFiles),
+                    ]
+                ]),
+                license,
+                agent,
+                organization,
+                *creators.findAll { creator -> creator["@id"] != agent?["@id"] },
+                *contactPoints,
+                *datasetParts,
+                *propertyValues,
+                *controlActions,
+                *tmpInputs,
+                *taskCreateActions,
+                *taskOutputs,
+                *publishCreateActions,
+                *inputFiles,
+                *outputFiles,
+            ])
+        ]
+
+        // render manifest to JSON file
+        wrroc["@graph"] = (wrroc["@graph"] as List).collect { entity -> compact(entity) }
+        path.text = JsonOutput.prettyPrint(JsonOutput.toJson(wrroc))
+    }
+
+    /**
+     * Replace singleton arrays with single values, as recommended
+     * by RO-Crate for compacted JSON-LD.
+     *
+     * @param value
+     */
+    private static Object compact(Object value) {
+        if( value instanceof Map )
+            return value.collectEntries { k, v -> [k, compact(v)] }
+        if( value instanceof List ) {
+            final list = value.collect { v -> compact(v) }
+            return list.size() == 1 ? list.first() : list
+        }
+        return value
+    }
+
+    private static String getDatePublished() {
+        return LocalDateTime.now().format(DateTimeFormatter.ISO_DATE)
+    }
+
+    /**
+     * Parse information about the agent running the workflow.
+     *
+     * @param opts
+     */
+    private Map getAgentInfo(Map opts) {
+        final result = [:]
+
+        if( !opts.agent )
+            return null
+
+        final agentOpts = opts.agent as Map
+        result["@id"] = agentOpts.getOrDefault("orcid", "agent-1")
+        result["@type"] = "Person"
+        if( agentOpts.name )
+            result.name = agentOpts.name
+
+        // Check for contact information
+        if( agentOpts.email || agentOpts.phone ) {
+            final contactPointId = getContactPointInfo(agentOpts)
+            if( contactPointId )
+                result.contactPoint = ["@id": contactPointId]
+        }
+
+        return result
+    }
+
+    /**
+     * Add the workflow diagram to the crate, copying it from the
+     * project directory unless it is a URL.
+     *
+     * @param diagram relative path or URL from the manifest
+     * @param crateDir
+     * @param datasetParts
+     */
+    private String getDiagram(String diagram, Path crateDir, List datasetParts) {
+        if( !diagram )
+            return null
+        final remote = diagram.contains('://')
+        final source = remote ? null : projectDir.resolve(diagram)
+        if( !remote && !Files.exists(source) ) {
+            log.warn "Workflow diagram `${diagram}` does not exist in the project directory -- it will not be included in the Workflow Run RO-Crate"
+            return null
+        }
+        if( !remote ) {
+            final target = crateDir.resolve(diagram)
+            Files.createDirectories(target.parent)
+            source.copyTo(target)
+        }
+        datasetParts.add([
+            "@id"        : diagram,
+            "@type"      : ["File", "ImageObject"],
+            "name"       : diagram.tokenize('/').last(),
+            "description": "The diagram of the workflow."
+        ])
+        return diagram
+    }
+
+    /**
+     * Get the authors of the workflow from the manifest contributors.
+     *
+     * The agent is reused if it is also an author.
+     *
+     * @param manifest
+     * @param agent
+     */
+    private static List<Map> getCreators(Manifest manifest, Map agent) {
+        return (manifest.contributors ?: [])
+            .findAll { c -> Manifest.ContributionType.AUTHOR in c.contribution }
+            .collect { c ->
+                final id = c.orcid ?: "#${c.name.replaceAll(/\s+/, '_')}"
+                if( id == agent?["@id"] )
+                    return agent
+                withoutNulls([
+                    "@id"  : id,
+                    "@type": "Person",
+                    "name" : c.name,
+                    "email": c.email,
+                ])
+            } as List<Map>
+    }
+
+    /**
+     * Parse information about the organization of the agent running the workflow.
+     *
+     * @param opts
+     */
+    private Map getOrganizationInfo(Map opts) {
+        final result = [:]
+
+        if( !opts.organization )
+            return null
+
+        final orgOpts = opts.organization as Map
+        result["@id"] = orgOpts.getOrDefault("ror", "organization-1")
+        result["@type"] = "Organization"
+        if( orgOpts.name )
+            result.name = orgOpts.name
+        if( orgOpts.ror )
+            result.url = orgOpts.ror
+
+        // Check for contact information
+        if( orgOpts.email || orgOpts.phone ) {
+            final contactPointId = getContactPointInfo(orgOpts)
+            if( contactPointId )
+                result.contactPoint = ["@id": contactPointId]
+        }
+
+        return result
+    }
+
+    /**
+     * Parse a contact point and add it to the list of contact points.
+     *
+     * @param opts
+     */
+    private String getContactPointInfo(Map opts) {
+        // Prefer email for the contact point ID
+        String contactPointId = null
+        if( opts.email )
+            contactPointId = "mailto:" + opts.email
+        else if( opts.phone )
+            contactPointId = opts.phone
+
+        if( !contactPointId )
+            return null
+
+        final contactPoint = [:]
+        contactPoint["@id"] = contactPointId
+        contactPoint["@type"] = "ContactPoint"
+        if( opts.contactType )
+            contactPoint.contactType = opts.contactType
+        if( opts.email )
+            contactPoint.email = opts.email
+        if( opts.phone )
+            contactPoint.phone = opts.phone
+        if( opts.orcid )
+            contactPoint.url = opts.orcid
+        if( opts.ror )
+            contactPoint.url = opts.ror
+
+        contactPoints.add(contactPoint)
+        return contactPointId
+    }
+
+    /**
+     * Parse information about the RO-Crate publisher.
+     *
+     * @param opts
+     * @param agent
+     * @param organization
+     */
+    private static String getPublisherId(Map opts, Map agent, Map organization) {
+        if( !opts.publisher )
+            return null
+
+        final publisherId = opts.publisher
+
+        // Check if the publisher id references either the agent or the organization
+        final agentId = agent?["@id"]
+        final organizationId = organization?["@id"]
+        if( publisherId != agentId && publisherId != organizationId )
+            return null
+
+        return publisherId
+    }
+
+    /**
+     * Noraalize a parameter value.
+     *
+     * @param value
+     */
+    private Object normalizeParamValue(Object value) {
+        switch( value ) {
+            case Boolean:
+            case Number:
+                return value
+            case CharSequence:
+                return normalizePath(value.toString())
+            case Path:
+                return normalizePath(value as Path)
+            case List:
+            case Map:
+                return JsonOutput.toJson(value)
+            case Duration:
+                return ((Duration) value).toMillis()
+            case MemoryUnit:
+                return ((MemoryUnit) value).toBytes()
+            default:
+                log.warn "Workflow Run RO-Crate encountered parameter value of type ${value.class.name} -- JSON serialization might be incorrect"
+                return value
+        }
+    }
+
+    /**
+     * Get the parameter schema of a pipeline as a map.
+     *
+     * @param path
+     */
+    private static Map<String,Map> getParameterSchema(Path path) {
+        final schema = new JsonSlurper().parseText(path.text) as Map
+
+        final defs = (schema['$defs'] ?: schema['defs'] ?: schema['definitions'] ?: [:]) as Map
+
+        final schemaProps = schema.properties as Map ?: [:]
+        final defsProps = defs.values().collect { defn ->
+            (defn as Map).properties ?: [:]
+        } as List<Map>
+        final allProps = [schemaProps] + defsProps
+        return allProps.collectEntries { props -> props } as Map<String,Map>
+    }
+
+    /**
+     * Determine the type of a parameter based on its
+     * schema and/or runtime value.
+     *
+     * @param name
+     * @param value
+     * @param schema
+     */
+    private static String getParameterType(String name, Object value, Map schema) {
+        // infer from schema
+        if( schema ) {
+            final type = schema.type
+            final format = schema.format
+
+            switch( type ) {
+                case "boolean":
+                    return "Boolean"
+                case "integer":
+                case "number":
+                    return "Number"
+                case "string":
+                    return \
+                        format == "file-path" ? "File" :
+                        format == "directory-path" ? "Dataset" :
+                        "Text"
+            }
+        }
+
+        // infer from runtime value
+        switch( value ) {
+            case Boolean:
+                return "Boolean"
+            case Number:
+            case Duration:
+            case MemoryUnit:
+                return "Number"
+            case CharSequence:
+                return "Text"
+            case List:
+            case Map:
+                return "Text"
+            case Path:
+                return getType(value as Path)
+            default:
+                return null
+        }
+    }
+
+    /**
+     * Get the canonical id of a workflow parameter.
+     *
+     * @param name
+     */
+    private String getWorkflowParamId(String name) {
+        return "#param/${name}"
+    }
+
+    /**
+     * Get the canonical id of a workflow output.
+     *
+     * @param name
+     */
+    private String getWorkflowOutputId(String name) {
+        return "#output/${name}"
+    }
+
+    /**
+     * Get the relative path of a workflow output.
+     *
+     * @param path
+     * @param session
+     */
+    private String getWorkflowOutputPath(Path path, Session session) {
+        // output directory is null when running a process or workflow directly
+        if( session.outputDir == null )
+            return normalizePath(path)
+        final outputDir = session.outputDir.toAbsolutePath()
+        if( path.startsWith(outputDir) )
+            return outputDir.relativize(path).toString()
+        log.warn "Cannot get relative path for workflow output '${path.toUriString()}'"
+        return null
+    }
+
+    /**
+     * Get the crate id of a file or directory outside the crate.
+     *
+     * Directory ids end with a slash, as recommended by RO-Crate.
+     *
+     * @param path
+     * @param type
+     */
+    private String getDataEntityId(Path path, String type) {
+        if( type == "File" && isLocalProjectFile(path) )
+            return projectDir.normalize().relativize(path.normalize()).toString()
+        final id = normalizePath(path)
+        return type == "Dataset" && !id.endsWith("/") ? "${id}/" : id
+    }
+
+    /**
+     * Get the crate id of a file or directory inside the crate.
+     *
+     * @param path
+     * @param crateDir
+     */
+    private static String getCrateFileId(Path path, Path crateDir) {
+        final id = crateDir.relativize(path).toString()
+        return getType(path) == "Dataset" ? "${id}/" : id
+    }
+
+    /**
+     * Link data entities to the formal parameters that they are
+     * values of.
+     *
+     * @param entities
+     * @param entityIds map of formal parameter id to entity ids
+     */
+    private static void linkExampleOfWork(List<Map> entities, Map<String,List<String>> entityIds) {
+        for( final entity : entities ) {
+            final refs = entityIds
+                .findAll { paramId, ids -> entity["@id"] in ids }
+                .collect { paramId, ids -> ["@id": paramId] }
+            if( refs )
+                entity["exampleOfWork"] = refs.size() == 1 ? refs.first() : refs
+        }
+    }
+
+    /**
+     * Link directories specified by params to the input files
+     * that they contain.
+     *
+     * @param entities
+     * @param inputEntities map of input file to entity
+     * @param paramPaths map of param path to param names
+     * @param entityIds map of formal parameter id to entity id
+     */
+    private void linkParamDirectoryParts(List<Map> entities, Map<Path,Map> inputEntities, Map<Path,List<String>> paramPaths, Map<String,String> entityIds) {
+        final Map<String,Map> datasets = entities
+            .findAll { entity -> entity["@type"] == "Dataset" }
+            .collectEntries { entity -> [entity["@id"], entity] }
+        final Map<String,Set<String>> parts = [:]
+        inputEntities.each { source, entity ->
+            final id = entity["@id"] as String
+            for( final name : ProvHelper.findParams(source, paramPaths) ) {
+                final datasetId = entityIds[getWorkflowParamId(name)]
+                if( datasets.containsKey(datasetId) && datasetId != id )
+                    parts.computeIfAbsent(datasetId, (k) -> new TreeSet<String>()).add(id)
+            }
+        }
+        parts.each { datasetId, ids ->
+            datasets[datasetId]["hasPart"] = ids.collect { id -> ["@id": id] }
+        }
+    }
+
+    /**
+     * Get the crate id of an input file specified by a param.
+     *
+     * Files are namespaced by param name to prevent collisions.
+     *
+     * @param name
+     * @param source
+     */
+    private static String getParamFileId(String name, Path source) {
+        return "${name}/${source.name}"
+    }
+
+    private static void copyParamFile(String name, Path source, Path crateDir) {
+        log.debug "Copying input file specified by `params.${name}` into RO-Crate: ${source.toUriString()}"
+        final target = crateDir.resolve(getParamFileId(name, source))
+        Files.createDirectories(target.parent)
+        source.copyTo(target)
+    }
+
+    /**
+     * Determine whether a file is a project asset that can't be
+     * referenced by repository URL, and so must be copied into
+     * the crate.
+     *
+     * @param path
+     */
+    private boolean isLocalProjectFile(Path path) {
+        return !repository && path.normalize().startsWith(projectDir.normalize()) && path.isFile()
+    }
+
+    private void copyProjectFile(Path source, Path crateDir) {
+        final target = crateDir.resolve(getDataEntityId(source, "File"))
+        if( target == source.normalize() )
+            return
+        log.debug "Copying project file into RO-Crate: ${source.toUriString()}"
+        Files.createDirectories(target.parent)
+        source.copyTo(target)
+    }
+
+    /**
+     * Get the canonical id of a module script.
+     *
+     * @param process
+     */
+    private String getModuleId(ProcessDef process) {
+        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
+        return "#module/${projectDir.relativize(scriptPath)}/${process.baseName}"
+    }
+
+    /**
+     * Get the canonical url of a module script.
+     *
+     * @param process
+     */
+    private String getModuleUrl(ProcessDef process) {
+        final scriptPath = ScriptMeta.get(process.getOwner()).getScriptPath().normalize()
+        return normalizePath(scriptPath)
+    }
+
+    /**
+     * Get the canonical id of a tool used by a module.
+     *
+     * @param process
+     * @param toolName
+     */
+    private String getToolId(ProcessDef process, String toolName) {
+        return "${getModuleId(process)}/${toolName}"
+    }
+
+    /**
+     * Get the canonical id of a process in the workflow DAG.
+     *
+     * @param process
+     */
+    private static String getProcessControlId(TaskProcessor process) {
+        return "#process-control/${process.name}"
+    }
+
+    private static String getProcessStepId(TaskProcessor process) {
+        return "#process-step/${process.name}"
+    }
+
+    /**
+     * Get the canonical id of a task.
+     *
+     * @param task
+     */
+    private static String getTaskId(TaskRun task) {
+        return "#task/${task.hash}"
+    }
+
+    /**
+     * Get the relative name of a task output.
+     *
+     * @param task
+     * @param target
+     */
+    private static String getTaskOutputName(TaskRun task, Path target) {
+        final workDir = task.workDir.toUriString()
+        return target.toUriString().replace(workDir + '/', '')
+    }
+
+    /**
+     * Get the canonical id of a task output.
+     *
+     * @param task
+     * @param name
+     */
+    private static String getTaskOutputId(TaskRun task, String name) {
+        return "#task/${task.hash}/${name}"
+    }
+
+    private static String getTaskOutputId(TaskRun task, Path target) {
+        return "#task/${task.hash}/${getTaskOutputName(task, target)}"
+    }
+
+    /**
+     * Get the nf-core meta.yml of a Nextflow module as a map.
+     *
+     * @param process
+     */
+    private static Map getModuleSchema(ProcessDef process) {
+        final metaFile = ScriptMeta.get(process.getOwner()).getModuleDir().resolve('meta.yml')
+        return Files.exists(metaFile)
+            ? new Yaml().load(metaFile.text) as Map
+            : null
+    }
+
+    /**
+     * Get the RO-Crate "@type" of a path based on whether
+     * it is a file or directory.
+     *
+     * @param path
+     */
+    private static String getType(Path path) {
+        return path.isDirectory()
+            ? "Dataset"
+            : "File"
+    }
+
+    private static List asReferences(List values) {
+        return values.collect { value -> ["@id": value["@id"]] }
+    }
+
+    private static List withoutNulls(List list) {
+        return list.findAll { v -> v != null }
+    }
+
+    private static Map withoutNulls(Map map) {
+        return map.findAll { k, v -> v != null }
+    }
+
+}
